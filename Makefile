@@ -11,7 +11,7 @@ AOS        := node scripts/aos.mjs
 ENSURE     := CLAUDE_PLUGIN_ROOT=$(REPO)/plugin CLAUDE_PLUGIN_DATA=$(DATA) AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
 
 .DEFAULT_GOAL := help
-.PHONY: help install uninstall build validate test doctor start stop restart open demo link unlink statusline statusline-off notifier
+.PHONY: help install uninstall build validate test doctor start stop restart open demo link unlink statusline statusline-off notifier screenshots
 
 help: ## Show this list
 	@echo "AOS: Claude Code live dashboard"; echo
@@ -87,3 +87,6 @@ statusline-off: ## Remove the AOS status line
 
 notifier: ## (macOS) Build the branded notification app
 	@node plugin/notify/build-notifier.mjs 2>&1 | tail -2
+
+screenshots: ## Regenerate docs/screenshots + docs/hero.gif from synthetic demo data (needs the monitor running, playwright-core; ffmpeg for the GIF)
+	@node scripts/screenshots.mjs

@@ -4,6 +4,61 @@ AOS-1 is a minimal, runtime-agnostic contract for orchestrating several AI agent
 
 This repository holds the spec, JSON Schemas, a zero-dependency conformance validator, and a reference server, dashboard and heartbeat runner.
 
+<p align="center">
+  <a href="docs/screenshots/01-graph-dark.png"><img src="docs/hero.gif" alt="AOS live dashboard: a project graph of agents with streaming activity" width="900"></a><br>
+  <sub>The live dashboard watching three projects and 19 agents. All screenshots use a synthetic demo dataset (no real projects or paths).</sub>
+</p>
+
+## Screenshots
+
+<table>
+<tr>
+<td><a href="docs/screenshots/01-graph-dark.png"><img src="docs/screenshots/01-graph-dark.png" width="420" alt="Project graph: heart, project hubs, agents, live streams"></a><br><sub>Project graph: heart, project hubs, agents, live streams</sub></td>
+<td><a href="docs/screenshots/02-graph-light.png"><img src="docs/screenshots/02-graph-light.png" width="420" alt="Same scene in the light theme"></a><br><sub>Same scene in the light theme</sub></td>
+</tr>
+<tr>
+<td><a href="docs/screenshots/03-agent-drawer-dark.png"><img src="docs/screenshots/03-agent-drawer-dark.png" width="420" alt="Agent drawer: current tool, tool feed, tokens, run time, model"></a><br><sub>Agent drawer: current tool, tool feed, tokens, run time, model</sub></td>
+<td><a href="docs/screenshots/04-project-drawer-dark.png"><img src="docs/screenshots/04-project-drawer-dark.png" width="420" alt="Project drawer: every agent in the project"></a><br><sub>Project drawer: every agent in the project</sub></td>
+</tr>
+<tr>
+<td><a href="docs/screenshots/05-conflict-and-alerts-dark.png"><img src="docs/screenshots/05-conflict-and-alerts-dark.png" width="420" alt="File conflict popover and an alert toast"></a><br><sub>File conflict popover and an alert toast</sub></td>
+<td><a href="docs/screenshots/06-replay-dark.png"><img src="docs/screenshots/06-replay-dark.png" width="420" alt="Replay: scrub back through the last hours"></a><br><sub>Replay: scrub back through the last hours</sub></td>
+</tr>
+<tr>
+<td><a href="docs/screenshots/07-telemetry-dark.png"><img src="docs/screenshots/07-telemetry-dark.png" width="420" alt="Telemetry dock with the event stream"></a><br><sub>Telemetry dock with the event stream</sub></td>
+<td><a href="docs/screenshots/08-terminal.png"><img src="docs/screenshots/08-terminal.png" width="420" alt="Terminal dashboard (aos-dash)"></a><br><sub>Terminal dashboard (aos-dash)</sub></td>
+</tr>
+</table>
+
+Regenerate with `make screenshots` (needs playwright-core and the monitor running; ffmpeg for the GIF). The data comes from `scripts/demo-state.mjs`, served to the real UI through request interception.
+
+## How it works
+
+```mermaid
+flowchart LR
+  S["Claude Code sessions<br/>terminal / IDE / desktop"] --> H["Hooks<br/>aos-hook.mjs, 16 events"]
+  H --> L[("Sanitized event log<br/>local")]
+  L --> M["Monitor<br/>folds events: projects, models, tokens,<br/>conflicts, stuck / errored rules"]
+  M --> W["Web UI"]
+  M --> T["Terminal UI"]
+  M --> P["MCP server"]
+  M --> SL["Status line"]
+  M --> N["Notifier"]
+  NOTE["localhost only, read-only,<br/>no prompts or file contents stored"] -.- M
+```
+
+## Highlights
+
+- Privacy-first local telemetry: hooks log event and tool names, counts and short labels only, never prompts, commands, file contents or tool output.
+- Project-graph layout (heart, project hubs, agents) with node and label overlaps ruled out by construction and covered by automated geometry tests.
+- Canvas particle streams (thousands of particles, adaptive to frame time, crisp on high-DPI screens), checked in WebKit and Chromium and used daily in Safari.
+- Per-model stuck thresholds, plus errored-agent and file-conflict detection.
+- Pan and zoom (wheel, trackpad, pinch, drag, keyboard) with the particle streams staying aligned to the graph.
+- Replay: scrub the recorded timeline and see the graph as it was.
+- Light and dark themes with checked contrast tokens.
+- One plugin ships the hooks, the web UI, a terminal dashboard (`aos-dash`), a read-only MCP server and a macOS notifier.
+- Automated test suites for the spec validator, terminal UI, MCP server, notifier and theme contrast (`make test`).
+
 ## Quickstart
 
 Requires Node 18+. There are no dependencies to install.
