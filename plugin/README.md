@@ -1,63 +1,70 @@
 # aos-dashboard (Claude Code plugin)
 
-A local, read-only live dashboard for agent orchestration (AOS-1). Hooks log one compact line per Claude Code event to a local file; a monitor serves the folded state at http://127.0.0.1:4318. The plugin also ships an `aos` MCP server (read-only tools) and a `dashboard` skill.
-
-## Build
-
-Run from the repo root after changing `monitor.mjs`, `hooks/aos-hook.mjs`, `ui/` or `cli/`:
-
-```sh
-node plugin/build.mjs
-```
-
-It copies the sources into `plugin/` (with a small data-dir patch on the copies only), validates the plugin, and prints a table of files.
+A local, read-only live dashboard for Claude Code sessions. Hooks log one compact line per event to a local file; a monitor folds them into a graph (heart -> project hubs -> agents) served at http://127.0.0.1:4318. The plugin also ships a terminal view, an `aos` MCP server (read-only tools), a `dash` skill and a branded macOS notifier.
 
 ## Install
 
-These are the install steps. Run them yourself:
+From the repo root (needs Node 18+ and the Claude Code CLI):
 
 ```sh
-claude plugin marketplace add /Users/tom/agent-orchestration-standard
+make install     # build, register + install the plugin, link `aos-dash`, build the notifier, start the monitor
+make doctor      # check the whole setup
+```
+
+Then start a **new** Claude Code session (existing sessions keep the hooks they started with; or run `/reload-plugins` in them). Manual equivalent:
+
+```sh
+claude plugin marketplace add "$(pwd)"
 claude plugin install aos-dashboard@aos-local
 ```
 
-Dev test without installing:
+Dev test without installing: `claude --plugin-dir ./plugin`. Remove everything with `make uninstall` (your history stays in the data folder).
 
-```sh
-claude --plugin-dir /Users/tom/agent-orchestration-standard/plugin
-```
-
-Uninstall:
-
-```sh
-claude plugin uninstall aos-dashboard@aos-local
-claude plugin marketplace remove aos-local
-```
-
-**Before installing:** remove the hand-added hooks from `~/.claude/settings.json`. The plugin registers the same events, so keeping both would log every event twice. Keep a backup of that file first.
+If you previously added AOS hooks to `~/.claude/settings.json` by hand, remove them: the plugin registers the same events and both would log every event twice.
 
 ## Use
 
-Open http://127.0.0.1:4318 (on macOS: `open http://127.0.0.1:4318`). The monitor starts automatically at session start. Terminal view: `node ${CLAUDE_PLUGIN_ROOT}/cli/dash.mjs`.
+- **Web:** http://127.0.0.1:4318 (`make open`). The monitor starts automatically at session start.
+- **Terminal:** `aos-dash` (live full-screen; `q` quit, space pause, `l` cycles auto/list/ring). `aos-dash --once` prints one frame.
+- **In a session:** `/aos-dashboard:dash` shows a snapshot; the `aos_*` MCP tools let Claude query the monitor (`aos_status` first).
+- **Status line (optional):** `make statusline` (edits `~/.claude/settings.json` with a backup; `make statusline-off` removes it).
+- **Notifications:** alerts for "needs your input" and "stuck" use a small branded notifier app on macOS (`make notifier`).
 
-## Autostart and AOS_NO_AUTOSTART
+## Hooks (16 events, all async)
 
-A SessionStart hook starts the monitor if nothing answers on the port. It is idempotent and silent. To turn it off, set `AOS_NO_AUTOSTART=1` in the environment Claude Code runs in. `AOS_PORT` (or `PORT`) changes the port.
+SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, SubagentStart, SubagentStop, Stop, StopFailure, TaskCreated, TaskCompleted, PreModelSwitch, PostModelSwitch, Notification, SessionEnd.
+
+## Configuration
+
+`${CLAUDE_PLUGIN_DATA}/live/config.json` (usually `~/.claude/plugins/data/aos-dashboard-aos-local/live/config.json`; seeded on first run, never overwritten):
+
+```json
+{
+  "stuck_after_s": 180,
+  "stuck_after_s_by_model": { "opus": 600, "sonnet": 240, "haiku": 180 },
+  "notify": { "enabled": true, "on": ["needs_input", "stuck"], "sound": false },
+  "projects": { "tom": "Home (~)" }
+}
+```
+
+- `stuck_after_s*`: seconds of silence before an agent counts as stuck (doubled while a tool call is open).
+- `notify.on`: any of `needs_input`, `stuck`, `error`, `agent_done`, `session_done`.
+- `projects`: rename a project by folder name or full path. A project is the folder containing most of a session's activity (a folder with `.git`, `package.json`, `CLAUDE.md` etc. wins over a plain parent).
+- `prices.json` (same folder): optional per-model prices for dollar estimates; empty by default.
+
+Environment: `AOS_NO_AUTOSTART=1` disables the monitor autostart, `AOS_PORT` changes the port, `AOS_LIVE_DIR` moves the data folder, `AOS_NOTIFY_DRY=1` prints notifications instead of sending them.
 
 ## Privacy
 
-- Everything stays on this machine. The monitor binds 127.0.0.1 only and nothing is sent anywhere.
-- The dashboard is read-only.
-- The hooks do not store prompts, command text, file contents, tool output or environment values.
-- They do store event and tool names, truncated session IDs, agent IDs and types, basenames of most tool targets, the first word of a Bash command (when it is a plain word), the full path of files edited by Edit/Write tools, transcript paths, and notification types.
+- Everything stays on this machine. The monitor binds 127.0.0.1 only and nothing is sent anywhere. The dashboard is read-only.
+- **Not stored:** prompts, command text, file contents, tool output, error messages, environment values.
+- **Stored (local log only):** event and tool names, truncated session IDs, agent IDs and types, the first word of a Bash command (when it is a plain word), short labels such as file basenames, the full path of files edited by Edit/Write tools (for conflict detection), the full working-folder path of each event (for project grouping), transcript paths (for token counts and model names), notification types, error categories, model IDs, task IDs.
+- The API, web UI, terminal view and MCP output show names and counts only, never full paths.
 - Data lives in `${CLAUDE_PLUGIN_DATA}/live` (or `AOS_LIVE_DIR`). Delete that folder to erase it.
 
 ## Layout
 
-- `.claude-plugin/plugin.json`: manifest
-- `hooks/hooks.json`: hook registrations (async)
-- `hooks/aos-hook.mjs`, `monitor.mjs`, `ui/`, `cli/`: copies made by `build.mjs`
-- `hooks/ensure-monitor.mjs`: SessionStart autostart
-- `defaults/`: starter `config.json` and `prices.json` (prices blank)
-- `.mcp.json`, `mcp/`: the `aos` MCP server
-- `skills/dashboard/SKILL.md`: the dashboard skill
+- `.claude-plugin/plugin.json`: manifest; `hooks/hooks.json`: hook registrations
+- `hooks/aos-hook.mjs`, `monitor.mjs`, `ui/`, `cli/`: copies generated by `node plugin/build.mjs` (run `make build` after changing the sources in the repo root)
+- `hooks/ensure-monitor.mjs`: SessionStart autostart (idempotent, silent)
+- `mcp/`: the read-only MCP server; `notify/`: the branded notifier; `bin/`: `aos-dash` and the status-line script; `skills/dash/`: the in-session snapshot skill; `defaults/`: seeded config
