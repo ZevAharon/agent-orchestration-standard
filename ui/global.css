@@ -1,0 +1,85 @@
+/* AOS-1 global overlays: cost readout, alert toasts, replay scrubber. Owner: global agent.
+   Reuses theme tokens only. Overlays/chrome only: never changes graph layout or sizes. */
+
+/* ---------- cost / tokens readout (top right of the graph panel) ---------- */
+.aos-cost{position:absolute;right:24px;top:44px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-family:var(--mono);transition:opacity .2s}
+.aos-cost[hidden]{display:none!important}
+.aos-cost-btn{all:unset;box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-end;gap:6px;cursor:pointer;padding:2px 0;border-radius:3px}
+.aos-cost-btn:focus-visible{outline:1px solid var(--accent-hi);outline-offset:3px}
+.aos-cost-l{font:600 11.5px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text-2)}
+.aos-cost-v{font:600 26px/1.15 var(--mono);color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.aos-cost-v small{font-size:14px;color:var(--text-2);font-weight:600;margin-left:6px;letter-spacing:.04em}
+.aos-cost-bar{display:flex;width:100%;min-width:96px;height:2px;gap:1px;background:var(--line)}
+.aos-cost-bar i{display:block;height:100%;min-width:1px}
+.aos-cost-bar .f-opus{background:var(--text)}
+.aos-cost-bar .f-sonnet{background:var(--accent)}
+.aos-cost-bar .f-haiku{background:var(--muted)}
+.aos-cost-bar .f-other{background:var(--line-2)}
+.aos-cost.dim{opacity:.4}
+.aos-cost-pop{position:absolute;right:0;top:100%;margin-top:10px;min-width:300px;padding:12px 14px;background:var(--glass-strong);border-bottom:1px solid var(--line-2);border-top:1px solid var(--line);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);text-align:left;z-index:16}
+.aos-cost-pop[hidden]{display:none!important}
+.aos-pop-h,.aos-pop-r{display:grid;grid-template-columns:minmax(64px,1fr) auto auto auto;gap:4px 14px;align-items:baseline;font:500 12px/1.7 var(--mono);color:var(--text-2);font-variant-numeric:tabular-nums}
+.aos-pop-h{font:600 10px/1.6 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);margin-bottom:4px}
+.aos-pop-h span:not(:first-child),.aos-pop-r span:not(:first-child){text-align:right}
+.aos-pop-r b{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:var(--text);letter-spacing:.06em;text-transform:uppercase;font-size:11.5px}
+.aos-pop-r b::before{content:"";width:6px;height:2px;background:var(--muted)}
+.aos-pop-r.f-opus b::before{background:var(--text)}
+.aos-pop-r.f-sonnet b::before{background:var(--accent)}
+.aos-pop-note{margin:8px 0 0;font:500 10.5px/1.5 var(--mono);letter-spacing:.06em;color:var(--muted)}
+
+/* ---------- alert toasts (top right, under the header) ---------- */
+.aos-toasts{position:fixed;right:24px;top:var(--aos-toast-top,120px);z-index:14;display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:min(380px,calc(100vw - 32px));pointer-events:none}
+.aos-toast{pointer-events:auto;cursor:pointer;box-sizing:border-box;width:100%;padding:9px 14px;background:var(--glass-strong);border:0;border-bottom:1px solid var(--line-2);border-left:2px solid var(--text-2);color:var(--text-2);font:600 11px/1.45 var(--mono);letter-spacing:.08em;text-transform:uppercase;text-align:left;animation:aos-toast-in .25s ease-out both;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.aos-toast:focus-visible{outline:1px solid var(--accent-hi);outline-offset:1px}
+.aos-toast .k{display:block;font-size:10px;letter-spacing:.18em;margin-bottom:2px;color:var(--text)}
+.aos-toast .x{display:block;font-weight:500;letter-spacing:.04em;text-transform:none;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aos-toast.k-needs_input{border-left-color:var(--accent);color:var(--text)}
+.aos-toast.k-needs_input .k{color:var(--accent-hi)}
+.aos-toast.k-stuck{border-left-color:var(--stalled)}
+.aos-toast.k-stuck .k{color:var(--stalled)}
+.aos-toast.k-agent_done,.aos-toast.k-session_done,.aos-toast.k-info{border-left-color:var(--line-2)}
+.aos-toast.out{opacity:0;transform:translateY(-4px);transition:opacity .25s,transform .25s}
+@keyframes aos-toast-in{0%{opacity:0;transform:translateY(-6px)}100%{opacity:1;transform:none}}
+
+/* ---------- replay control + tag (top bar, by the live marker) ---------- */
+.aos-replay-btn{all:unset;box-sizing:border-box;flex:none;cursor:pointer;padding:6px 4px;border-radius:3px;font:600 11.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);transition:color .15s,background .15s}
+.aos-replay-btn:hover{color:var(--accent-hi);background:var(--hover)}
+.aos-replay-btn:focus-visible{outline:1px solid var(--accent-hi);outline-offset:1px}
+.aos-replay-btn[hidden],.aos-replay-tag[hidden]{display:none!important}
+.aos-replay-tag{flex:none;display:inline-flex;align-items:center;gap:8px;padding:6px 2px;font:600 11.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.aos-replay-tag::before{content:"";width:6px;height:6px;border:1px solid var(--muted);border-radius:50%;box-sizing:border-box}
+body.aos-replaying .live-ind{display:none!important}
+@media (max-width:720px){.aos-replay-btn,.aos-replay-tag{order:2}}
+
+/* ---------- replay scrubber (overlays bottom of the graph panel, above the dock) ---------- */
+.aos-replay{position:absolute;left:0;right:0;bottom:0;height:44px;z-index:5;box-sizing:border-box;display:flex;align-items:center;gap:16px;padding:0 24px;background:rgba(10,14,23,.86);background:var(--glass);border-top:1px solid var(--line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font:600 11.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text-2)}
+.aos-replay[hidden]{display:none!important}
+.aos-rb{all:unset;box-sizing:border-box;flex:none;cursor:pointer;padding:8px 4px;min-width:34px;text-align:center;border-radius:3px;font:600 11.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text-2)}
+.aos-rb:hover{color:var(--accent-hi);background:var(--hover)}
+.aos-rb:focus-visible{outline:1px solid var(--accent-hi);outline-offset:1px}
+.aos-rb.live{color:var(--accent)}
+.aos-track{position:relative;flex:1 1 auto;min-width:80px;height:28px;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none}
+.aos-track:focus-visible{outline:1px solid var(--accent-hi);outline-offset:2px}
+.aos-line{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line-2)}
+.aos-fill{position:absolute;left:0;top:50%;height:1px;width:0;background:var(--accent)}
+.aos-ticks{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+.aos-ticks i{position:absolute;width:1px;margin-left:-.5px;background:var(--text-2);opacity:.7}
+.aos-ticks i.t-spawn{top:9px;bottom:50%;margin-bottom:3px}
+.aos-ticks i.t-done{top:50%;bottom:9px;margin-top:3px;background:var(--accent)}
+.aos-ticks i.t-warn{top:6px;bottom:6px;background:var(--stalled);opacity:.9}
+.aos-ticks i.t-other{top:11px;bottom:11px;opacity:.4}
+.aos-head{position:absolute;top:3px;bottom:3px;width:11px;margin-left:-5px;pointer-events:none}
+.aos-head::before{content:"";position:absolute;left:5px;top:0;bottom:0;width:1px;background:var(--text)}
+.aos-head::after{content:"";position:absolute;left:2px;top:50%;margin-top:-3px;width:7px;height:7px;border-radius:50%;background:var(--text)}
+.aos-time{flex:none;min-width:70px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+@media (max-width:720px){.aos-replay{gap:8px;padding:0 12px}.aos-time{min-width:58px}}
+
+/* while the scrubber is open it owns the bottom strip of the panel */
+body.aos-replay-open .legend,body.aos-replay-open .updated{opacity:0;pointer-events:none}
+
+@media (max-width:720px){
+  .aos-cost{top:auto;bottom:52px;right:14px}
+  .aos-cost-v{font-size:16px}
+  .aos-toasts{right:14px}
+}
+.aos-tl{flex:none;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:.06em;margin:0 -6px}

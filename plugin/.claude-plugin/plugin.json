@@ -1,0 +1,9 @@
+{
+  "name": "aos-dashboard",
+  "displayName": "AOS Dashboard",
+  "version": "0.1.0",
+  "description": "Read-only live dashboard for agent orchestration (AOS-1): logs Claude Code hook events locally and serves a live view on 127.0.0.1:4318.",
+  "author": { "name": "tom" },
+  "license": "UNLICENSED",
+  "keywords": ["agents", "orchestration", "dashboard", "monitor", "aos"]
+}

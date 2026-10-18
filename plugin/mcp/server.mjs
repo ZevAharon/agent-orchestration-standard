@@ -1,0 +1,326 @@
+#!/usr/bin/env node
+// AOS monitor MCP server: zero-dependency, READ-ONLY, stdio (newline-delimited JSON-RPC 2.0).
+// Only ever talks to http://127.0.0.1:<AOS_PORT||4318>. Never logs to stdout.
+import { createInterface } from 'node:readline';
+
+const SUPPORTED = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const SERVER_INFO = { name: 'aos-monitor', version: '0.1.0' };
+const TIMEOUT_MS = 2000;
+const MAX_BODY = 8 * 1024 * 1024;
+
+function resolvePort() {
+  const raw = process.env.AOS_PORT;
+  if (raw === undefined || raw === '') return 4318;
+  const n = Number(raw);
+  if (/^\d+$/.test(String(raw).trim()) && n >= 1024 && n <= 65535) return n;
+  process.stderr.write(`aos-mcp: ignoring invalid AOS_PORT=${JSON.stringify(raw)}; using 4318\n`);
+  return 4318;
+}
+const PORT = resolvePort();
+const log = (...a) => process.stderr.write('aos-mcp: ' + a.join(' ') + '\n');
+
+class ToolError extends Error {}
+
+async function api(path) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}${path}`, {
+      signal: ctl.signal, redirect: 'error', headers: { accept: 'application/json' },
+    });
+    const text = await res.text();
+    if (text.length > MAX_BODY) throw new ToolError('AOS monitor response too large');
+    if (!res.ok) throw new ToolError(`AOS monitor returned HTTP ${res.status} for ${path.split('?')[0]}`);
+    try { return JSON.parse(text); } catch { throw new ToolError('AOS monitor returned invalid JSON'); }
+  } catch (e) {
+    if (e instanceof ToolError) throw e;
+    throw new ToolError(
+      `AOS monitor not reachable on 127.0.0.1:${PORT}: start it with node monitor.mjs, or open a new Claude Code session if the plugin autostart is enabled` +
+      (e?.name === 'AbortError' ? ' (timed out after 2s)' : ''));
+  } finally { clearTimeout(timer); }
+}
+
+// ---------- formatting helpers ----------
+const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+const clampInt = (v, lo, hi, def) => {
+  if (v === undefined || v === null) return def;
+  return Math.min(hi, Math.max(lo, Math.trunc(v)));
+};
+const trunc = (s, n = 160) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+const tools_ = (a) => (a && Array.isArray(a)) ? a : [];
+const newTokens = (u = {}) => num(u.input) + num(u.output) + num(u.cache_write);
+const fmt = (n) => Number(n).toLocaleString('en-US');
+const hasNum = (v) => typeof v === 'number' && Number.isFinite(v);
+// run time: 45s, 12m, 1h 05m; tokens per minute: 950, 4.1k, 1.2M
+const durStr = (s) => { if (!hasNum(s) || s < 0) return null; s = Math.round(s); if (s < 60) return s + 's'; const m = Math.floor(s / 60); return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm'; };
+const tpmStr = (n) => { if (!hasNum(n)) return null; return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); };
+// monitor fields from an older monitor are absent: returns '' so the line is unchanged
+const runPart = (a) => { const r = durStr(a.ran_s), t = tpmStr(a.tok_per_min); return (r ? ` | ran ${r}` : '') + (t ? ` | ${t} tok/min` : ''); };
+
+function toolStr(t) {
+  if (!t) return '-';
+  return `${t.name ?? '?'}${t.summary ? ' ' + trunc(t.summary, 80) : ''}`;
+}
+function agentLine(a) {
+  const u = a.usage || {};
+  return `${a.id} | ${a.role ?? '?'} | ${a.status ?? '?'} | ${a.model_label ?? a.model ?? '?'} | tool: ${toolStr(a.current_tool)}` +
+    (a.stuck ? ` | STUCK ${num(a.stuck_for_s)}s` : '') + ` | new_tok ${fmt(newTokens(u))}` + runPart(a);
+}
+// projects (newer monitors): state.projects = [{id,name,agents:[ids],running,ran_s_total}]; absent on older monitors
+const projectsOf = (s) => tools_(s.projects).filter((p) => p && typeof p === 'object');
+const projName = (s, a) => a.project ?? projectsOf(s).find((p) => tools_(p.agents).includes(a.id) || p.id === a.project_id)?.name ?? null;
+const projCount = (n) => `${n} agent${n === 1 ? '' : 's'}`;
+function projLine(p, ags) {
+  const run = ags.filter((a) => a.status === 'running').length;
+  return `${p.name ?? p.id} (${projCount(ags.length)}, ${run} running${durStr(p.ran_s_total) ? ', ran ' + durStr(p.ran_s_total) : ''})`;
+}
+function totals(agents) {
+  const t = { input: 0, output: 0, cache_write: 0, cache_read: 0, usd: 0, usdKnown: false };
+  for (const a of agents) {
+    const u = a.usage || {};
+    t.input += num(u.input); t.output += num(u.output);
+    t.cache_write += num(u.cache_write); t.cache_read += num(u.cache_read);
+    if (typeof u.usd_est === 'number') { t.usd += u.usd_est; t.usdKnown = true; }
+  }
+  t.new = t.input + t.output + t.cache_write;
+  return t;
+}
+function itemText(x) {
+  if (x == null) return '';
+  if (typeof x === 'string') return trunc(x, 200);
+  const keys = ['severity', 'level', 'kind', 'type', 'agent', 'agents', 'file', 'path', 'message', 'msg', 'text', 'ts'];
+  const o = {};
+  for (const k of keys) if (x[k] !== undefined) o[k] = x[k];
+  return trunc(JSON.stringify(Object.keys(o).length ? o : x), 240);
+}
+function listItems(arr, max = 10) {
+  arr = tools_(arr);
+  if (!arr.length) return ['  none'];
+  const out = arr.slice(-max).map((x) => '  - ' + itemText(x));
+  if (arr.length > max) out.unshift(`  (showing newest ${max} of ${arr.length})`);
+  return out;
+}
+function conflictsOf(s) {
+  const c = s.collisions;
+  if (Array.isArray(c)) return c;
+  if (c && typeof c === 'object') return Object.entries(c).map(([k, v]) => ({ file: k, agents: v }));
+  return [];
+}
+function summarize(s, includeEvents = 0, project = null) {
+  const projs = projectsOf(s);
+  let agents = tools_(s.agents); const tasks = tools_(s.tasks);
+  if (project != null) {
+    const q = String(project).toLowerCase();
+    const hit = projs.filter((p) => String(p.id).toLowerCase() === q || String(p.name).toLowerCase() === q);
+    if (!hit.length) throw new ToolError(`No project ${JSON.stringify(project)}. Known: ${projs.map((p) => p.name ?? p.id).slice(0, 20).join(', ') || 'none (this monitor does not report projects)'}`);
+    const ids = new Set(hit.flatMap((p) => tools_(p.agents)));
+    agents = agents.filter((a) => ids.has(a.id) || hit.some((p) => p.id === a.project_id));
+  }
+  const counts = { running: 0, idle: 0, stalled: 0 };
+  for (const a of agents) if (a.status in counts) counts[a.status]++;
+  const t = totals(agents);
+  const L = [];
+  L.push(`mode: ${s.mode ?? '?'} | server_time: ${s.server_time ?? '?'}` + (s.goal ? ` | goal: ${trunc(typeof s.goal === 'string' ? s.goal : JSON.stringify(s.goal), 200)}` : ''));
+  L.push(`agents: ${agents.length} (running ${counts.running}, idle ${counts.idle}, stalled ${counts.stalled}) | stuck: ${agents.filter((a) => a.stuck).length} | tasks: ${tasks.length}`);
+  L.push(`tokens: new ${fmt(t.new)} (in ${fmt(t.input)}, out ${fmt(t.output)}, cache_write ${fmt(t.cache_write)}) vs cache_read ${fmt(t.cache_read)}` + (t.usdKnown ? ` | usd_est ~$${t.usd.toFixed(4)}` : ''));
+  const conf = conflictsOf(s);
+  L.push(`conflicts: ${conf.length}`);
+  if (projs.length) {
+    const shown = project != null ? projs.filter((p) => agents.some((a) => tools_(p.agents).includes(a.id) || a.project_id === p.id)) : projs;
+    L.push(`projects: ${shown.length}` + (shown.length ? ' | ' + shown.map((p) => projLine(p, agents.filter((a) => tools_(p.agents).includes(a.id) || a.project_id === p.id))).join('; ') : ''));
+    const done = new Set();
+    for (const p of shown) {
+      const ags = agents.filter((a) => (tools_(p.agents).includes(a.id) || a.project_id === p.id) && !done.has(a.id));
+      ags.forEach((a) => done.add(a.id));
+      L.push(`project ${p.name ?? p.id}: ${projCount(ags.length)}`);
+      for (const a of ags) L.push('  ' + agentLine(a));
+    }
+    const rest = agents.filter((a) => !done.has(a.id));
+    if (rest.length) { L.push(`project (none): ${projCount(rest.length)}`); for (const a of rest) L.push('  ' + agentLine(a)); }
+  } else for (const a of agents) L.push('  ' + agentLine(a));
+  L.push('alerts (newest):', ...listItems(s.alerts, 5));
+  if (includeEvents > 0) {
+    const ev = tools_(s.events).slice(-includeEvents);
+    L.push(`events (newest ${ev.length}):`, ...ev.map((e) => '  ' + trunc(JSON.stringify(e), 240)));
+  }
+  return L.join('\n');
+}
+
+// ---------- tools ----------
+const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const obj = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+
+const TOOLS = [
+  {
+    name: 'aos_status',
+    description: 'Compact summary of the live AOS monitor: projects summary, then agents grouped by project (id, role, status, model, current tool, stuck), counts, new tokens vs cache reads, conflicts, newest alerts. Optional project filter.',
+    inputSchema: obj({ project: { type: 'string', minLength: 1, maxLength: 200, description: 'Only this project (name or id, as in the projects line).' }, include_events: { type: 'integer', minimum: 0, maximum: 50, description: 'Also include the newest N raw events (max 50). Default 0.' } }),
+    async run(a) {
+      const s = await api('/api/state');
+      return summarize(s, clampInt(a.include_events, 0, 50, 0), a.project ?? null);
+    },
+  },
+  {
+    name: 'aos_agent',
+    description: 'One agent in detail: status, model, current tool, recent tools, usage, files touched.',
+    inputSchema: obj({ id: { type: 'string', minLength: 1, maxLength: 200, description: 'Agent id as shown by aos_status.' } }, ['id']),
+    async run(a) {
+      const s = await api('/api/state');
+      const ag = tools_(s.agents).find((x) => x.id === a.id);
+      if (!ag) throw new ToolError(`No agent with id ${JSON.stringify(a.id)}. Known: ${tools_(s.agents).map((x) => x.id).slice(0, 20).join(', ') || 'none'}`);
+      const u = ag.usage || {};
+      const pj = projName(s, ag);
+      const L = [
+        agentLine(ag),
+        ...(pj ? [`project: ${pj}`] : []),
+        `timing: started_at ${ag.started_at ?? 'n/a'}, ended_at ${ag.ended_at ?? (ag.started_at != null && ag.status === 'running' ? 'running' : 'n/a')}, ran_s ${hasNum(ag.ran_s) ? ag.ran_s : 'n/a'}, tok_per_min ${hasNum(ag.tok_per_min) ? ag.tok_per_min : 'n/a'}`,
+        `usage: input ${fmt(num(u.input))}, output ${fmt(num(u.output))}, cache_write ${fmt(num(u.cache_write))}, cache_read ${fmt(num(u.cache_read))}, usd_est ${u.usd_est == null ? 'n/a' : '$' + u.usd_est}`,
+        `current_tool: ${ag.current_tool ? JSON.stringify(ag.current_tool) : 'none'}`,
+        'recent_tools:', ...tools_(ag.recent_tools).slice(-15).map((t) => '  - ' + trunc(typeof t === 'string' ? t : JSON.stringify(t), 200)),
+        'files:', ...tools_(ag.files).slice(0, 40).map((f) => '  - ' + trunc(typeof f === 'string' ? f : JSON.stringify(f), 200)),
+      ];
+      return L.join('\n');
+    },
+  },
+  {
+    name: 'aos_cost',
+    description: 'Token and cost breakdown. "New tokens" = input + output + cache_write, reported separately from cache reads. Includes usd_est when available.',
+    inputSchema: obj(),
+    async run() {
+      const s = await api('/api/state');
+      const agents = tools_(s.agents), t = totals(agents);
+      const L = [
+        `new tokens: ${fmt(t.new)} (input ${fmt(t.input)}, output ${fmt(t.output)}, cache_write ${fmt(t.cache_write)})`,
+        `cache reads: ${fmt(t.cache_read)}`,
+        `usd_est: ${t.usdKnown ? '$' + t.usd.toFixed(4) : 'n/a'}`,
+        'per agent (new tokens | cache_read | usd_est | ran | tok/min):',
+        ...agents.map((a) => `  ${a.id} ${a.model_label ?? ''}: ${fmt(newTokens(a.usage))} | ${fmt(num(a.usage?.cache_read))} | ${a.usage?.usd_est == null ? 'n/a' : '$' + a.usage.usd_est}` + runPart(a)),
+      ];
+      if (s.cost !== undefined) L.push('monitor cost: ' + trunc(JSON.stringify(s.cost), 1500));
+      return L.join('\n');
+    },
+  },
+  {
+    name: 'aos_conflicts',
+    description: 'File conflicts/collisions between agents reported by the monitor.',
+    inputSchema: obj(),
+    async run() {
+      const c = conflictsOf(await api('/api/state'));
+      return `conflicts: ${c.length}\n` + (c.length ? c.slice(0, 50).map((x) => '- ' + itemText(x)).join('\n') : '');
+    },
+  },
+  {
+    name: 'aos_alerts',
+    description: 'Newest alerts from the monitor (up to 20).',
+    inputSchema: obj(),
+    async run() {
+      const al = tools_((await api('/api/state')).alerts);
+      return `alerts: ${al.length}\n` + listItems(al, 20).join('\n');
+    },
+  },
+  {
+    name: 'aos_history',
+    description: 'Recorded history range and replay markers (use timestamps with aos_state_at).',
+    inputSchema: obj({ limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Max markers (default 20).' } }),
+    async run(a) {
+      const limit = clampInt(a.limit, 1, 200, 20);
+      const h = await api(`/api/history?limit=${limit}`);
+      const m = tools_(h.markers).slice(-limit);
+      return [`first_ts: ${h.first_ts ?? 'n/a'} | last_ts: ${h.last_ts ?? 'n/a'} | count: ${h.count ?? 0}`,
+        `markers (${m.length}):`, ...m.map((x) => '  - ' + trunc(typeof x === 'string' ? x : JSON.stringify(x), 200))].join('\n');
+    },
+  },
+  {
+    name: 'aos_state_at',
+    description: 'Replay summary of the monitor state at a past ISO-8601 timestamp.',
+    inputSchema: obj({ at: { type: 'string', minLength: 10, maxLength: 40, description: 'ISO-8601 timestamp, e.g. 2026-01-01T12:00:00Z.' } }, ['at']),
+    async run(a) {
+      if (!/^\d{4}-\d{2}-\d{2}/.test(a.at) || isNaN(Date.parse(a.at))) throw new ToolError('Invalid "at": expected an ISO-8601 timestamp');
+      const iso = new Date(a.at).toISOString();
+      return `replay at ${iso}\n` + summarize(await api(`/api/state?at=${encodeURIComponent(iso)}`), 0);
+    },
+  },
+];
+
+function validate(schema, args) {
+  if (args === undefined || args === null) args = {};
+  if (typeof args !== 'object' || Array.isArray(args)) return 'arguments must be an object';
+  for (const r of schema.required) if (args[r] === undefined) return `missing required argument "${r}"`;
+  for (const [k, v] of Object.entries(args)) {
+    const p = schema.properties[k];
+    if (!p) return `unknown argument "${k}"`;
+    if (p.type === 'integer') {
+      if (typeof v !== 'number' || !Number.isInteger(v)) return `"${k}" must be an integer`;
+      if (v < p.minimum || v > p.maximum) return `"${k}" must be between ${p.minimum} and ${p.maximum}`;
+    } else if (p.type === 'string') {
+      if (typeof v !== 'string') return `"${k}" must be a string`;
+      if (v.length < (p.minLength ?? 0) || v.length > (p.maxLength ?? Infinity)) return `"${k}" length out of range`;
+    }
+  }
+  return null;
+}
+
+// ---------- JSON-RPC ----------
+const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
+const reply = (id, result) => send({ jsonrpc: '2.0', id, result });
+const fail = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
+
+async function handle(msg) {
+  if (!msg || typeof msg !== 'object' || Array.isArray(msg) || msg.jsonrpc !== '2.0') {
+    return fail(msg && msg.id !== undefined ? msg.id : null, -32600, 'Invalid Request');
+  }
+  const { id, method, params } = msg;
+  const isReq = id !== undefined && id !== null;
+  if (typeof method !== 'string') {
+    if (isReq && ('result' in msg || 'error' in msg)) return; // stray response; ignore
+    return fail(id ?? null, -32600, 'Invalid Request');
+  }
+  if (!isReq) return; // notifications (initialized, cancelled, ...) need no response
+  switch (method) {
+    case 'initialize': {
+      const want = params?.protocolVersion;
+      return reply(id, {
+        protocolVersion: SUPPORTED.includes(want) ? want : SUPPORTED[0],
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: SERVER_INFO,
+        instructions: 'Read-only view of the local AOS live monitor (127.0.0.1). Start with aos_status.',
+      });
+    }
+    case 'ping': return reply(id, {});
+    case 'tools/list':
+      return reply(id, { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema, annotations: { title: name, ...RO } })) });
+    case 'tools/call': {
+      if (!params || typeof params.name !== 'string') return fail(id, -32602, 'Invalid params: "name" required');
+      const tool = TOOLS.find((t) => t.name === params.name);
+      if (!tool) return fail(id, -32602, `Unknown tool: ${trunc(params.name, 80)}`);
+      const bad = validate(tool.inputSchema, params.arguments);
+      if (bad) return fail(id, -32602, `Invalid params: ${bad}`);
+      try {
+        const text = await tool.run(params.arguments || {});
+        return reply(id, { content: [{ type: 'text', text }], isError: false });
+      } catch (e) {
+        if (!(e instanceof ToolError)) log('tool error:', e?.stack || e);
+        return reply(id, { content: [{ type: 'text', text: e instanceof ToolError ? e.message : 'Internal error in tool' }], isError: true });
+      }
+    }
+    default: return fail(id, -32601, `Method not found: ${trunc(method, 80)}`);
+  }
+}
+
+const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const pending = new Set();
+rl.on('line', (line) => {
+  line = line.trim();
+  if (!line) return;
+  let msg;
+  try { msg = JSON.parse(line); } catch { return fail(null, -32700, 'Parse error'); }
+  const batch = Array.isArray(msg) ? msg : null;
+  if (batch) { if (!batch.length) return fail(null, -32600, 'Invalid Request'); }
+  for (const m of batch || [msg]) {
+    const p = handle(m).catch((e) => { log('handler error:', e?.stack || e); if (m && m.id != null) fail(m.id, -32603, 'Internal error'); })
+      .finally(() => pending.delete(p));
+    pending.add(p);
+  }
+});
+rl.on('close', async () => { await Promise.allSettled([...pending]); process.exit(0); });
+process.on('uncaughtException', (e) => log('uncaught:', e?.stack || e));

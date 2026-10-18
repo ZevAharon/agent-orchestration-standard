@@ -1,0 +1,4 @@
+{
+  "stuck_after_s": 180,
+  "notify": { "enabled": true, "on": ["needs_input", "stuck"], "sound": false }
+}

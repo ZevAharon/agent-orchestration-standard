@@ -1,0 +1,13 @@
+{
+  "name": "aos-local",
+  "owner": {
+    "name": "tom"
+  },
+  "description": "Local marketplace for the AOS dashboard plugin.",
+  "plugins": [
+    {
+      "name": "aos-dashboard",
+      "source": "./plugin"
+    }
+  ]
+}

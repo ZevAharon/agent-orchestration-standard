@@ -1,0 +1,15 @@
+{
+  "_comment": "USD per million tokens, keyed by model id (exact or longest prefix match). Fill in CURRENT prices from your provider's pricing page; null = unknown, and usd_est stays null. input and output are required for an estimate; null cache prices count as 0.",
+  "claude-sonnet-5-5": {
+    "input": null,
+    "output": null,
+    "cache_read": null,
+    "cache_write": null
+  },
+  "your-model-id-here": {
+    "input": null,
+    "output": null,
+    "cache_read": null,
+    "cache_write": null
+  }
+}
