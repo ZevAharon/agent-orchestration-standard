@@ -291,6 +291,55 @@ for (const [counts, c, r] of [[[14], 177, 91], [[21, 1], 177, 91], [[5, 4, 3], 1
   assert.ok(/\x1b\[/.test(render(st, 177, 91, { color: 'true' })));
   const tiny = renderModel(pfix([30, 10]), 40, 12, { view: 'ring' }); assert.equal(tiny.mode, 'ring'); assertNoTextOverlap(tiny, 'tiny');
 }
+// ---- scaling: the graph spreads with the terminal (distances only; labels keep their size)
+const cellSig = (m) => { const str = JSON.stringify([m.mode, m.labelMode, m.orbs.map((o) => [o.id, o.x, o.y]), m.labels.map((l) => [l.id, l.x0, l.y0, l.w, l.h]), m.hubs.map((h) => [h.id, h.x, h.y]), m.centre]); let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return m.mode + ':' + h.toString(16); };
+// fixtures captured from the previous (unscaled) algorithm: at <= 100x30 nothing moves
+const OLD_FIX = {"14@100x30":"list:3d5341d9","14@100x30f":"ring:e0b29b","14@90x28":"list:3d5341d9","14@90x28f":"ring:108f02e5","14@80x24":"list:3d5341d9","14@80x24f":"ring:b8cb9b73","21@100x30":"list:3d5341d9","21@100x30f":"ring:a2db2c3a","21@90x28":"list:3d5341d9","21@90x28f":"ring:fa8fe1f0","21@80x24":"list:3d5341d9","21@80x24f":"ring:13fe4ba3","40@100x30":"list:3d5341d9","40@100x30f":"ring:60235023","40@90x28":"list:3d5341d9","40@90x28f":"ring:58b0332f","40@80x24":"list:3d5341d9","40@80x24f":"ring:63a395ed","12+5@100x30":"ring:27540a62","12+5@100x30f":"ring:27540a62","12+5@90x28":"list:3d5341d9","12+5@90x28f":"ring:d978862a","12+5@80x24":"list:3d5341d9","12+5@80x24f":"ring:ec37190d","5+4+3@100x30":"ring:281c2912","5+4+3@100x30f":"ring:281c2912","5+4+3@90x28":"ring:8538bf99","5+4+3@90x28f":"ring:8538bf99","5+4+3@80x24":"ring:5c35565a","5+4+3@80x24f":"ring:5c35565a","20+3+2+8+1+4@100x30":"list:3d5341d9","20+3+2+8+1+4@100x30f":"ring:1cee5487","20+3+2+8+1+4@90x28":"list:3d5341d9","20+3+2+8+1+4@90x28f":"ring:c1d0584b","20+3+2+8+1+4@80x24":"list:3d5341d9","20+3+2+8+1+4@80x24f":"ring:2ce059fe","21+1@100x30":"list:3d5341d9","21+1@100x30f":"ring:99b7e87a","21+1@90x28":"list:3d5341d9","21+1@90x28f":"ring:cf89bc2b","21+1@80x24":"list:3d5341d9","21+1@80x24f":"ring:a3a08bc4"};
+for (const [k, want] of Object.entries(OLD_FIX)) {
+  const [cs, rest] = k.split('@'); const [c, r] = rest.replace('f', '').split('x').map(Number);
+  assert.equal(cellSig(renderModel(pfix(cs.split('+').map(Number)), c, r, { view: rest.endsWith('f') ? 'ring' : 'auto' })), want, 'unchanged vs previous layout ' + k);
+}
+const drawnBox = (m) => { // bounding box of drawn content between header and footer
+  let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+  for (let y = 2; y < m.rows - 1; y++) [...m.plain[y]].forEach((ch, x) => { if (ch !== ' ') { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } });
+  return { w: x1 - x0 + 1, h: y1 - y0 + 1, x0, x1, y0, y1 };
+};
+const SCALE_CASES = [[14], [21], [40], [12, 5], [5, 4, 3], [20, 3, 2, 8, 1, 4]];
+let scaled = 0;
+for (const counts of SCALE_CASES) for (const [c, r] of [[100, 30], [140, 40], [177, 91], [240, 60], [360, 91]]) {
+  const st = pfix(counts); const label = `scale ${counts.join('+')} @${c}x${r}`;
+  const m = renderModel(st, c, r, { frame: 3 });
+  if (m.mode !== 'ring') continue;
+  assertGraph(m, st, label);
+  const b = drawnBox(m); const uw = c, uh = r - 3;
+  if (c >= 177 && r >= 91) {
+    scaled++;
+    assert.ok(b.w >= 0.8 * uw && b.h >= 0.8 * uh, `fills >= 80% ${label}: ${(b.w / uw).toFixed(2)} x ${(b.h / uh).toFixed(2)}`);
+    assert.ok(b.w <= uw && b.y0 >= 2 && b.y1 <= r - 2, 'inside usable area ' + label);
+  }
+  if (counts.length >= 2) assert.ok(Math.abs(m.centre.x - (c - 1) / 2) <= 0.06 * c && Math.abs(m.centre.y - (2 + (r - 2) / 2)) <= 0.06 * r, `heart near centre ${label}: ${m.centre.x},${m.centre.y}`);
+  else if (c >= 177) assert.ok(Math.abs((b.x0 + b.x1) / 2 - (c - 1) / 2) <= 0.06 * c, 'single project composition centred ' + label);
+  // label footprints never grow
+  for (const l of m.labels) assert.ok(l.w <= 22 && l.h <= 4, 'label size unchanged ' + label);
+}
+assert.ok(scaled >= 10, 'scaled ring cases: ' + scaled);
+// the same terminal and project set always yields the same layout, whatever the live status
+{
+  const a = pfix([21, 1]); const b = pfix([21, 1]); b.agents.forEach((x, i) => { x.status = STAT[(i + 2) % 5]; });
+  assert.deepEqual(renderModel(a, 360, 91).orbs.map((o) => [o.id, o.x, o.y]), renderModel(b, 360, 91).orbs.map((o) => [o.id, o.x, o.y]), 'status does not move nodes');
+}
+// new agent arrival at 360x91 keeps every existing cell, and a resize re-lays out
+for (const counts of [[21, 1], [14], [5, 4, 3]]) {
+  const cache = { layouts: new Map(), fails: new Map() };
+  const st = pfix(counts); const a = renderModel(st, 360, 91, { cache });
+  const st2 = pfix(counts.map((n, i) => (i === 0 ? n + 2 : n)));
+  const m2 = renderModel(st2, 360, 91, { cache }); assertGraph(m2, st2, 'arrival 360x91 ' + counts);
+  for (const o of a.orbs) assert.deepEqual([m2.orbs.find((x) => x.id === o.id).x, m2.orbs.find((x) => x.id === o.id).y], [o.x, o.y], 'orb stays');
+  for (const l of a.labels) { const q = m2.labels.find((x) => x.id === l.id); assert.deepEqual([q.x0, q.y0], [l.x0, l.y0], 'label stays'); }
+  assert.deepEqual([m2.centre.x, m2.centre.y], [a.centre.x, a.centre.y], 'heart stays');
+  const small = renderModel(st, 177, 91, { cache }); assert.notDeepEqual(small.orbs.map((o) => [o.x, o.y]), a.orbs.map((o) => [o.x, o.y]), 'resize re-lays out');
+}
+
 console.log(`graph: ${graphRing} ring, ${graphList} list`);
 
 // terminal restore

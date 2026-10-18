@@ -112,11 +112,12 @@ Beyond the spec and the reference runner, this repo contains a read-only **live 
 | Notifier | `plugin/notify/` | Branded macOS notifications with an app icon |
 | Plugin | `plugin/`, `.claude-plugin/marketplace.json` | Packages all of the above; `node plugin/build.mjs` regenerates the copies |
 
-Install as a local plugin:
+Install (needs Node 18+ and the Claude Code CLI):
 
 ```sh
-claude plugin marketplace add /path/to/this/repo
-claude plugin install aos-dashboard@aos-local
+make install        # builds, registers + installs the local plugin, links `aos-dash`, builds the notifier, starts the monitor
+make doctor         # checks the whole setup and tells you what to fix
+make                # lists every target (test, build, start/stop, statusline, uninstall, ...)
 ```
 
 Then open http://127.0.0.1:4318 (the monitor starts automatically with a session; set `AOS_NO_AUTOSTART=1` to disable). New sessions pick up the hooks; existing ones need `/reload-plugins`. Project grouping, alerts and the stuck/errored rules can be tuned in the monitor's `live/config.json` (see `plugin/README.md`). Status: personal project, macOS-first, no licence chosen yet.

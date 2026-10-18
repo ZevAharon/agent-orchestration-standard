@@ -34,10 +34,16 @@
   var state = null, prev = null, lastOk = 0, failed = false, filterVal = '', searchVal = '', knownTypes = {}, showPrompts = false;
   var selected = null, nodes = {}, chips = {}, edges = {}, deps = {}, depInfo = {}, orchEl = null, seenSeq = null, lastFocus = null;
   var evSig = '', taskSig = '', openSeqs = {}, toastTimer = null, LVL = 0;
-  var REDUCED = false;
+  /* pins = user-placed positions of hubs / agents, as fractions of the viewBox; the heart is immovable */
+  var pins = {}, REDUCED = false;
   try { REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches); } catch (e0) {}
-  /* layout is static now: user pins of older builds are purged */
-  try { localStorage.removeItem('aos.pins'); localStorage.removeItem('aos.pins2'); localStorage.removeItem('aos.pins3'); } catch (e1) {}
+  /* pins live under a new key: pins of older builds (ring layout, different coordinates) are purged */
+  try {
+    localStorage.removeItem('aos.pins'); localStorage.removeItem('aos.pins2');
+    var rawPins = JSON.parse(localStorage.getItem('aos.pins3') || '{}') || {};
+    Object.keys(rawPins).forEach(function (k) { var v = rawPins[k]; if (k !== '__heart' && Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) && v[0] >= 0 && v[0] <= 1 && v[1] >= 0 && v[1] <= 1) pins[k] = [+v[0], +v[1]]; });
+  } catch (e1) { pins = {}; }
+  function savePins() { try { localStorage.setItem('aos.pins3', JSON.stringify(pins)); } catch (e2) {} }
   var $ = function (id) { return document.getElementById(id); };
 
   /* panel geometry from the QUANTIZED panel size only (8px buckets); the viewBox is set by the planner (world = panel / fit scale) */
@@ -187,10 +193,11 @@
      Layout planning is a pure function of a quantized signature: panel size in 8px buckets (re-planned only when it moves by
      more than 24px), the project / agent SET and their names. Status, tools, tokens, timestamps and DOM text measurement never
      feed the planner, so a poll with unchanged data cannot re-plan, and the chosen label level / fit scale cannot flip. */
-  var HEART = '__heart', N = {}, NL = [], EL = [], hubEls = {}, sticky = {}, MODEL = null, SIG = '', applied = null, SIGZ = '', SYNC = { added: [], hard: false };
+  var HEART = '__heart', N = {}, NL = [], EL = [], hubEls = {}, sticky = {}, MODEL = null, SIG = '', applied = null, touched = false, pendingPlan = false;
   var WD = { w: 1000, h: 600, s: 1, hx: 500, hy: 300, fit: -1, obs: [] }, layoutRuns = 0, simFrames = 0;
+  var sim = { on: false, steps: 0, still: 0 }, tw = null, raf = 0, lastT = 0, acc = 0, frameTimes = [], dragId = null, suppressClick = 0;
   var DT = 1 / 120, DAMP = Math.exp(-7 / 120), VMAX = 1400, VREST = 5, KREP = 2.4e6, CUT2 = 760 * 760, KC = 0.12, KW = 28, SECT = 36;
-  window.__aosLayoutRuns = 0;
+  window.__aosLayoutRuns = 0; window.__aosFrameTimes = frameTimes;
   /* text width estimates (em units, SF/Inter-like, deliberately generous): never measured from the DOM */
   var CWT = {}; (function () { var k, t = { ' ': .3, 'i': .27, 'l': .27, 'j': .29, '.': .3, ',': .3, ':': .3, ';': .3, '|': .3, '!': .3, "'": .25, 'f': .38, 't': .38, 'r': .4, '(': .38, ')': .38, '[': .36, ']': .36, 'I': .3, 'm': .88, 'w': .8, 'M': .92, 'W': 1.0, '·': .34, '…': .94, '-': .44, '_': .58, '/': .4 }; for (k in t) CWT[k] = t[k]; })();
   function sansW(s, fs, bold) { s = String(s); var w = 0, i, c; for (i = 0; i < s.length; i++) { c = s.charAt(i); w += CWT[c] != null ? CWT[c] : c >= 'A' && c <= 'Z' ? .69 : c >= '0' && c <= '9' ? .6 : c >= 'a' && c <= 'z' ? .555 : .7; } return w * fs * (bold ? 1.05 : 1.01) + 2; }
@@ -367,7 +374,7 @@
     return hz >= 0.4 ? (c > 0 ? 'r' : 'l') : (s < 0 ? 't' : 'b');
   }
   function sidesAll() { for (var i = 0; i < NL.length; i++) { var n = NL[i], sd = pickSide(n); if (sd !== n.side) setSide(n, sd); } }
-  function invM(n) { return n.kind === 'heart' ? 0 : n.kind === 'hub' ? TU.hm : 1; }
+  function invM(n) { return n.kind === 'heart' || pins[n.id] || dragId === n.id ? 0 : n.kind === 'hub' ? TU.hm : 1; }
 
   /* ---- world: viewBox = quantized panel size / scale; static reservations for HUD chrome (never measured) ---- */
   function setWorld(s, mobH) {
@@ -664,8 +671,9 @@
         placeKids(h, h.kids.map(function (id) { return N[id]; }), th * 180 / Math.PI + 180, Math.sqrt(ex), Math.sqrt(ey));
       });
     }
-    NL.forEach(function (n) { n.vx = n.vy = 0; setSide(n, pickSide(n)); });
+    NL.forEach(function (n) { n.vx = n.vy = 0; applyPin(n); setSide(n, pickSide(n)); });
   }
+  function applyPin(n) { var pn = pins[n.id]; if (pn) { n.x = pn[0] * WD.w; n.y = pn[1] * WD.h; } }
   function areaNeed() { var a = 0, p = 14 / WD.s; NL.forEach(function (n) { a += (n.bx2 - n.bx1 + p) * (n.by2 - n.by1 + p); }); return a * AREAK; }
   function areaAvail() { var a = WD.w * WD.h * 0.8; WD.obs.forEach(function (o) { a -= (o[2] - o[0]) * (o[3] - o[1]); }); return a; }
 
@@ -684,6 +692,7 @@
           if (n.kind === 'heart') { n.x = WD.hx; n.y = WD.hy; return; }
           if (n.spawn) return;
           n.x = WD.hx + (old[k][0] - oW.hx) * (L.mobile ? 1 : 1); n.y = WD.hy + (old[k][1] - oW.hy);
+          applyPin(n);
         });
         NL.forEach(function (n) { if (n.spawn) { var p = N[n.parent], h = (hash(n.id) % 628) / 100; n.x = p.x + Math.cos(h) * (p.cr + 4); n.y = p.y + Math.sin(h) * (p.cr + 4); } n.vx = n.vy = 0; setSide(n, pickSide(n)); });
       }
@@ -715,7 +724,6 @@
     WD.fit = best < 0 ? F.length - 1 : best;
     window.__aosLayoutBad = bad;
     $('graph').setAttribute('class', 'lv' + LVL);
-    resetView();
     return bad;
   }
   var VARS = [0, 1, 2, 3, 4, 5, 6, 7], VARV = [{}, { pw: 0.27, ar: 0.42 }, { ar: 0.4 }, { pw: 0.33 }, { pw: 0.36, ar: 0.38 }, { bc: 92, bk: 45, ar: 0.4 }, { pw: 0.4, hxm: 0.86, ar: 0.38 }, { pw: 0.38, bc: 92, bk: 45 }], TU0 = null;
@@ -727,7 +735,7 @@
   }
   /* balance: translate the whole graph (heart included) so its bounding box is centred in the free panel; kept only if still clean */
   function centerGraph() {
-    if (L.mobile) return;
+    if (L.mobile || Object.keys(pins).some(function (k) { return N[k]; })) return;
     var x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
     NL.forEach(function (n) { x1 = Math.min(x1, n.x + n.bx1); x2 = Math.max(x2, n.x + n.bx2); y1 = Math.min(y1, n.y + n.by1); y2 = Math.max(y2, n.y + n.by2); });
     var dx = WD.w / 2 - (x1 + x2) / 2, dy = WD.h / 2 - (y1 + y2) / 2;
@@ -814,7 +822,7 @@
   }
   function resetGraph() {
     ['g-agents', 'g-edges', 'g-deps'].forEach(function (id) { clear($(id)); }); if ($('g-hubs')) clear($('g-hubs'));
-    N = {}; NL = []; EL = []; nodes = {}; hubEls = {}; chips = {}; edges = {}; deps = {}; depInfo = {}; SIG = ''; WD.fit = -1;
+    N = {}; NL = []; EL = []; nodes = {}; hubEls = {}; chips = {}; edges = {}; deps = {}; depInfo = {}; SIG = ''; WD.fit = -1; tw = null; sim.on = false;
   }
   function mkAgentEl(id) {
     var g = sv('g', { 'class': 'node agent', tabindex: 0, role: 'button', 'data-id': id }, $('g-agents'));
@@ -823,6 +831,7 @@
     sv('circle', { 'class': 'card' }, g);
     sv('circle', { 'class': 'tint' }, g);
     sv('circle', { 'class': 'led', cx: 0, cy: 0, r: 2 }, g);
+    sv('circle', { 'class': 'pinmark', r: 2.6 }, g);
     sv('path', { 'class': 'collmark', d: 'M0,-4.6L4.6,0L0,4.6L-4.6,0Z' }, g);
     sv('text', { 'class': 'name' }, g);
     var sb = sv('text', { 'class': 'sub' }, g);
@@ -840,6 +849,7 @@
     sv('circle', { 'class': 'card' }, g);
     sv('circle', { 'class': 'ring2' }, g);
     sv('circle', { 'class': 'tint' }, g);
+    sv('circle', { 'class': 'pinmark', r: 3 }, g);
     sv('path', { 'class': 'collmark', d: 'M0,-5L5,0L0,5L-5,0Z' }, g);
     sv('text', { 'class': 'name' }, g);
     sv('text', { 'class': 'sub' }, g);
@@ -855,8 +865,8 @@
     H.kids = []; keep[HEART] = 1; list.push(H);
     function node(id, kind, parent, cl, extra) {
       var n = N[id];
-      if (!n) { n = N[id] = { id: id, kind: kind, x: 0, y: 0, dx: 0, dy: 0, vx: 0, vy: 0, side: 'b', spawn: true }; changed = true; if (kind === 'agent' && N[parent] && !N[parent].spawn) SYNC.added.push(n); else SYNC.hard = true; }
-      else if (n.parent !== parent) { changed = true; SYNC.hard = true; }
+      if (!n) { n = N[id] = { id: id, kind: kind, x: 0, y: 0, dx: 0, dy: 0, vx: 0, vy: 0, side: 'b', spawn: true }; changed = true; }
+      if (n.parent !== parent) changed = true;
       n.parent = parent; n.cl = cl; for (var k in extra) n[k] = extra[k];
       keep[id] = 1; list.push(n); N[parent].kids.push(id); return n;
     }
@@ -866,7 +876,7 @@
       md.hubs.forEach(function (p) { p.agents.forEach(function (a) { node(a.id, 'agent', p.key, p.key, { a: a }); }); });
     }
     Object.keys(N).forEach(function (id) {
-      if (keep[id]) return; changed = true; SYNC.hard = true;
+      if (keep[id]) return; changed = true;
       var n = N[id], g = n.el, ch = chips[id]; delete N[id];
       if (g) { g.classList.add('leaving'); setTimeout(function () { g.remove(); }, 520); }
       if (ch) { ch.classList.add('leaving'); setTimeout(function () { ch.remove(); }, 520); delete chips[id]; }
@@ -893,17 +903,18 @@
   function clsSet(g, c) { if (g._cls !== c) { g._cls = c; g.setAttribute('class', c); } }
   function updAgent(n) {
     var a = n.a, g = n.el, R = orbR(a) + (a.status === 'running' ? 2 : 0), sp = splitId(a.id), ml = a.model_label ? String(a.model_label) : '', cl = collOf(a.id);
-    clsSet(g, 'node agent s-' + a.status + (selected === a.id ? ' sel' : '') + (g.classList.contains('flash') ? ' flash' : '') + (g.classList.contains('enter') ? ' enter' : '') + (a.stuck ? ' stuck' : '') + (cl.length ? ' coll' : ''));
+    clsSet(g, 'node agent s-' + a.status + (selected === a.id ? ' sel' : '') + (g.classList.contains('flash') ? ' flash' : '') + (g.classList.contains('enter') ? ' enter' : '') + (pins[a.id] ? ' pinned' : '') + (dragId === a.id ? ' dragging' : '') + (a.stuck ? ' stuck' : '') + (cl.length ? ' coll' : ''));
     setPos(g.querySelector('.collmark'), -(orbR(a) + 8) * 0.72, -(orbR(a) + 8) * 0.72);
     setA(g.querySelector('.halo'), 'r', R + 14); setA(g.querySelector('.av'), 'r', R + 9); setA(g.querySelector('.card'), 'r', R + 6);
     setA(g.querySelector('.tint'), 'r', R); setA(g.querySelector('.focus-ring'), 'r', R + 12);
+    var pm = g.querySelector('.pinmark'); setA(pm, 'cx', Math.round((R + 6) * 0.72)); setA(pm, 'cy', -Math.round((R + 6) * 0.72));
     var m = n.m, mt = g.querySelector('text.model'), R1 = orbR(a) + 2, fam = /opus/i.test(ml) ? 'opus' : /sonnet/i.test(ml) ? 'sonnet' : /haiku/i.test(ml) ? 'haiku' : 'other';
     var nsT = a.stuck ? 'NO SIGNAL ' + fmtCompact(a.stuck_for_s) : '', nsEl = g.querySelector('tspan.ns');
     setT(g.querySelector('tspan.sid'), sp.short ? sp.short + ' · ' : '');
     setT(g.querySelector('tspan.st'), nsT && !m.hasM ? nsT : trunc(human(a.status), 8));
     if (nsT && m.hasM) { clsSet(mt, 'model nosig fam-' + fam); setT(mt.querySelector('tspan.dot'), ''); setT(mt.querySelector('tspan.mt'), nsT); setT(nsEl, ''); }
     else { clsSet(mt, 'model fam-' + fam); setT(mt.querySelector('tspan.dot'), ml ? '● ' : ''); setT(mt.querySelector('tspan.mt'), trunc(ml.toUpperCase(), 16)); setT(nsEl, ''); }
-    var al = 'Agent ' + a.id + ', ' + a.status + (a.stuck ? ', no signal for ' + fmtCompact(a.stuck_for_s) : '') + (cl.length ? ', file conflict ' + cl[0].name : '') + (toolName(a) ? ', using ' + toolName(a) : '') + (ml ? ', model ' + ml : '') + (a.current_task ? ', working on ' + a.current_task : '') + '. Open details.';
+    var al = 'Agent ' + a.id + ', ' + a.status + (a.stuck ? ', no signal for ' + fmtCompact(a.stuck_for_s) : '') + (cl.length ? ', file conflict ' + cl[0].name : '') + (toolName(a) ? ', using ' + toolName(a) : '') + (ml ? ', model ' + ml : '') + (a.current_task ? ', working on ' + a.current_task : '') + (pins[a.id] ? ', pinned' : '') + '. Open details. Arrow keys move it';
     if (g.getAttribute('aria-label') !== al) g.setAttribute('aria-label', al);
     /* task chip */
     var ct = m.hasT ? taskLineFor(a) : null, c = chips[a.id];
@@ -932,13 +943,14 @@
   }
   function updHub(n) {
     var p = n.p, g = n.el, hs = hubStatus(p.agents), R = n.R, anyColl = p.agents.some(function (a) { return collOf(a.id).length; });
-    clsSet(g, 'node hub s-' + hs.st + (selected === n.id ? ' sel' : '') + (g.classList.contains('flash') ? ' flash' : '') + (anyColl ? ' coll' : ''));
+    clsSet(g, 'node hub s-' + hs.st + (selected === n.id ? ' sel' : '') + (g.classList.contains('flash') ? ' flash' : '') + (pins[n.id] ? ' pinned' : '') + (dragId === n.id ? ' dragging' : '') + (anyColl ? ' coll' : ''));
     setA(g.querySelector('.halo'), 'r', R + 12); setA(g.querySelector('.card'), 'r', R); setA(g.querySelector('.ring2'), 'r', R + 5);
     setA(g.querySelector('.tint'), 'r', Math.round(R * 0.42)); setA(g.querySelector('.focus-ring'), 'r', R + 9);
+    var pm = g.querySelector('.pinmark'); setA(pm, 'cx', Math.round(R * 0.74)); setA(pm, 'cy', -Math.round(R * 0.74));
     setPos(g.querySelector('.collmark'), -R * 0.74, -R * 0.74);
     var tot = p.agents.length;
     setT(g.querySelector('text.sub'), cnt(tot, 'agent', 'agents') + ' · ' + hs.running + ' running');
-    var al = 'Project ' + p.name + ', ' + cnt(tot, 'agent', 'agents') + ', ' + hs.running + ' running' + (hs.stalled ? ', ' + hs.stalled + ' stalled' : '') + (hs.errored ? ', ' + hs.errored + ' errored' : '') + '. Open project details.';
+    var al = 'Project ' + p.name + ', ' + cnt(tot, 'agent', 'agents') + ', ' + hs.running + ' running' + (hs.stalled ? ', ' + hs.stalled + ' stalled' : '') + (hs.errored ? ', ' + hs.errored + ' errored' : '') + (pins[n.id] ? ', pinned' : '') + '. Open project details. Arrow keys move it';
     if (g.getAttribute('aria-label') !== al) g.setAttribute('aria-label', al);
   }
   /* label text positions for the node's current side (rebuilt only when side / level / text change) */
@@ -1000,8 +1012,45 @@
     Object.keys(deps).forEach(function (k) { if (!dk[k]) { deps[k].remove(); delete deps[k]; delete depInfo[k]; } });
   }
 
-  /* ---- static layout: the solver runs to completion synchronously; the settled result is drawn directly (no tween, no rAF loop) ---- */
-  function commit() { NL.forEach(function (n) { n.dx = n.x; n.dy = n.y; }); writeDom(); fxSync(); }
+  /* ---- animation: tween after a plan, live physics while dragging; sleeps completely otherwise ---- */
+  function startTween(dur) {
+    NL.forEach(function (n) { n.tx0 = n.dx; n.ty0 = n.dy; });
+    if (REDUCED || !dur) { NL.forEach(function (n) { n.dx = n.x; n.dy = n.y; }); tw = null; writeDom(); fxSync(); return; }
+    tw = { t0: 0, dur: dur }; kickRaf();
+  }
+  function frame(ts) {
+    raf = 0;
+    var t0 = performance.now(), dt = lastT ? Math.min(50, ts - lastT) : 16, more = false; lastT = ts; simFrames++;
+    if (sim.on) {
+      acc += dt; var k = 0, v = 0;
+      while (acc >= DT * 1000 && k < 4) { v = stepPhys(); acc -= DT * 1000; k++; if (!dragId) { sim.steps++; if (v < VREST) sim.still++; else sim.still = 0; } }
+      if (acc > DT * 1000) acc = 0;
+      NL.forEach(function (n) { n.dx = n.x; n.dy = n.y; });
+      if (!dragId && (sim.still >= 8 || sim.steps >= 360)) endSim();
+      more = sim.on;
+    }
+    if (tw) {
+      if (!tw.t0) tw.t0 = ts;
+      var q = Math.min(1, (ts - tw.t0) / tw.dur), e = 1 - Math.pow(1 - q, 3);
+      NL.forEach(function (n) { n.dx = n.tx0 + (n.x - n.tx0) * e; n.dy = n.ty0 + (n.y - n.ty0) * e; });
+      if (q >= 1) { NL.forEach(function (n) { n.dx = n.x; n.dy = n.y; }); tw = null; } else more = true;
+    }
+    writeDom(); fxSync();
+    frameTimes.push(performance.now() - t0); if (frameTimes.length > 600) frameTimes.shift();
+    if (more || sim.on || tw) kickRaf(); else { lastT = 0; acc = 0; }
+  }
+  function kickRaf() { if (!raf) raf = requestAnimationFrame(frame); }
+  function wake() {
+    if (REDUCED) return;
+    if (tw) { NL.forEach(function (n) { n.x = n.dx; n.y = n.dy; }); tw = null; }
+    sim.on = true; sim.steps = 0; sim.still = 0; kickRaf();
+  }
+  function endSim() {
+    sim.on = false;
+    var bad = strictPass();
+    if (bad || pendingPlan) { pendingPlan = false; var b2 = plan(false); startTween(420); return b2; }
+    startTween(160);
+  }
 
   /* ---- render ---- */
   function panelQ() {
@@ -1013,25 +1062,28 @@
     MODEL = buildModel();
     var ag = (state.agents || []);
     ag.forEach(function (a) { if (!sticky[a.id] && taskLineFor(a)) sticky[a.id] = 1; });
-    SYNC = { added: [], hard: false };
+    if (!override) {
+      var ids0 = {}, ch0 = false; NL.forEach(function (n) { ids0[n.id] = 1; });
+      ag.forEach(function (a) { ids0[a.id] = 1; }); (MODEL.hubs || []).forEach(function (p) { ids0[p.key] = 1; });
+      Object.keys(pins).forEach(function (k) { if (!ids0[k]) { delete pins[k]; ch0 = true; } }); if (ch0) savePins();
+    }
     var setChanged = syncNodes(MODEL);
     $('empty').hidden = ag.length > 0; if (!ag.length) $('empty').textContent = 'No crew registered.';
     var sig = sigOf(MODEL), first = WD.fit < 0;
     if (sig !== SIG || first) {
-      var szKey = [L.mobile ? 'm' : 'd', applied.w, applied.h].join('|'), sizeChanged = szKey !== SIGZ;
-      SIG = sig; SIGZ = szKey;
-      if (first) { NL.forEach(function (n) { n.spawn = false; }); plan(true); }
-      else if (sizeChanged) plan(true);                 /* panel size / mode changed: deterministic re-plan, view back to FIT */
-      else if (setChanged) {
-        if (SYNC.hard || !SYNC.added.length) plan(false);   /* agents/projects left or moved: re-plan from the current positions */
-        else if (!placeAdded()) plan(true);                 /* new agents only: existing nodes stay EXACTLY where they are */
-        NL.forEach(function (n) { n.spawn = false; });
-      } else {
-        /* text only (task line appeared, project renamed): keep every position unless a label no longer fits */
-        NL.forEach(function (n) { setMetrics(n, LVL); }); setRests();
-        if (violations()) plan(false);
+      var sizeOnly = !setChanged && !first;
+      SIG = sig;
+      if (dragId) { pendingPlan = true; NL.forEach(function (n) { setMetrics(n, LVL); }); setRests(); }
+      else {
+        if (first) NL.forEach(function (n) { n.spawn = false; });
+        plan(first || (sizeOnly && !touched));
+        updateContent();
+        if (first) { var H = N[HEART]; NL.forEach(function (n) { n.dx = H.x; n.dy = H.y; }); startTween(700); }
+        else {
+          NL.forEach(function (n) { if (n.dx === 0 && n.dy === 0 && n.kind !== 'heart') { var p = N[n.parent]; n.dx = p ? p.dx : WD.hx; n.dy = p ? p.dy : WD.hy; } });
+          startTween(sizeOnly ? 0 : 480);
+        }
       }
-      updateContent(); commit();
     }
     updateContent();
     renderOrch();
@@ -1039,155 +1091,75 @@
   }
 
   /* ---------- drag / pin / nudge ---------- */
-  /* new agents only: put each at the nearest clean free spot around its parent (deterministic, label-aware); nothing else moves */
-  window.__dbgPlace = function () { var a = SYNC.added[0] || NL[NL.length - 1], p = N[a.parent], c = { ok: 0, tot: 0, why: {} }; for (var x = 0; x < WD.w; x += 12) for (var y = 0; y < WD.h; y += 12) { a.x = x; a.y = y; setSide(a, 'r'); c.tot++; if (!nodeBad(a)) c.ok++; } return { c: c, w: WD.w, h: WD.h, s: WD.s, p: [p.x, p.y, p.R], rest: a.rest, an: a.an, n: NL.length }; };
-  function placeAdded() {
-    if (L.mobile || SYNC.hard) return false;
-    var add = SYNC.added.slice().sort(function (a, b) { return hash(a.id) - hash(b.id) || (a.id < b.id ? -1 : 1); }), H = N[HEART], ok = true;
-    NL.forEach(function (n) { setMetrics(n, LVL); }); setRests();
-    add.forEach(function (a) {
-      if (!ok) return;
-      var p = N[a.parent], an = a.an || 1, bdir = p.kind === 'hub' ? Math.atan2(H.y - p.y, H.x - p.x) : null, base = bdir !== null ? bdir + Math.PI : (hash(a.id) % 628) / 100, found = null;
-      for (var ri = 0; ri < 44 && !found; ri++) {
-        var r = a.rest * (0.45 + ri * 0.08);
-        for (var ai = 0; ai < 72 && !found; ai++) {
-          var t = base + (ai % 2 ? 1 : -1) * Math.ceil(ai / 2) * Math.PI / 36;
-          if (bdir !== null) { var dt = t - bdir; while (dt > Math.PI) dt -= 2 * Math.PI; while (dt < -Math.PI) dt += 2 * Math.PI; if (Math.abs(dt) < TU.bc * Math.PI / 180 * 0.9) continue; }
-          var ca = Math.cos(t), sa = Math.sin(t), ee = 1 / Math.sqrt(ca * ca / (an * an) + sa * sa * an * an);
-          a.x = p.x + r * ee * ca; a.y = p.y + r * ee * sa; a.vx = a.vy = 0;
-          var sds = [pickSide(a), 'r', 'l', 'b', 't'];
-          for (var si = 0; si < sds.length && !found; si++) { setSide(a, sds[si]); if (!nodeBad(a)) found = [a.x, a.y, a.side]; }
-        }
-      }
-      if (!found) { ok = false; console.log('NOSPOT', a.id, a.rest, p.id); return; }
-      a.x = found[0]; a.y = found[1]; setSide(a, found[2]); a.dx = a.x; a.dy = a.y; a.spawn = false;
-    });
-    var vv = violations(); if (ok && vv) console.log('VIOL', vv, JSON.stringify((function () { DBG = []; relax(0.6, true); var d = DBG; DBG = null; return d; })()).slice(0, 400));
-    return ok && !vv;
-  }
-  /* ---------- pointer: nodes are NOT draggable; a click / Enter opens the drawer ---------- */
-  function wireClick(g, id, open) {
-    g.addEventListener('click', function () { open(); });
-  }
-  /* ---------- pan / zoom: only the SVG viewBox changes (nodes never move); particles.js follows through getScreenCTM ---------- */
-  var VW = { x: 0, y: 0, w: 1000, h: 600 }, ZMIN = 0.5, ZMAX = 8, vbLast = '', fxRaf = 0, zoomUi = null;
   function svgPt(e) {
     var svg = $('graph'), m = svg.getScreenCTM && svg.getScreenCTM();
     if (m) { var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; var q = pt.matrixTransform(m.inverse()); return { x: q.x, y: q.y }; }
-    var r = svg.getBoundingClientRect(); return { x: VW.x + (e.clientX - r.left) / r.width * VW.w, y: VW.y + (e.clientY - r.top) / r.height * VW.h };
+    var r = svg.getBoundingClientRect(); return { x: (e.clientX - r.left) / WD.s, y: (e.clientY - r.top) / WD.s };
   }
-  function pxPerUnit() { var m = $('graph').getScreenCTM && $('graph').getScreenCTM(); return m && m.a ? m.a : ($('graph').clientWidth || 1) / VW.w; }
-  function graphBox() {
-    var x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
-    NL.forEach(function (n) { x1 = Math.min(x1, n.x + n.bx1); x2 = Math.max(x2, n.x + n.bx2); y1 = Math.min(y1, n.y + n.by1); y2 = Math.max(y2, n.y + n.by2); });
-    return x1 > x2 ? { x1: 0, y1: 0, x2: WD.w, y2: WD.h } : { x1: x1, y1: y1, x2: x2, y2: y2 };
+  function pinNode(id) { var n = N[id]; if (!n || n.kind === 'heart') return; pins[id] = [n.x / WD.w, n.y / WD.h]; savePins(); touched = true; if (state) updateContent(); if (selected) renderDrawer(); }
+  function unpinNode(id) { delete pins[id]; savePins(); if (state) updateContent(); if (selected) renderDrawer(); wake(); if (REDUCED) settleNow(); }
+  function settleNow() { var bad = solveSync(360); if (bad) plan(false); startTween(REDUCED ? 0 : 300); }
+  function clampTo(n, x, y) {
+    var mg = WD.mg;
+    return [clamp(x, mg - n.bx1, WD.w - mg - n.bx2), clamp(y, mg - n.by1, WD.h - mg - n.by2)];
   }
-  function clampView(v) {
-    var z = clamp(WD.w / v.w, ZMIN, ZMAX), w = WD.w / z, h = WD.h / z, b = graphBox();
-    var ow = 0.25 * Math.min(b.x2 - b.x1, w), oh = 0.25 * Math.min(b.y2 - b.y1, h);
-    return { x: clamp(v.x, b.x1 + ow - w, b.x2 - ow), y: clamp(v.y, b.y1 + oh - h, b.y2 - oh), w: w, h: h };
-  }
-  function paintView(hard) {
-    var svg = $('graph'), z = WD.w / VW.w, r4 = function (v) { return Math.round(v * 10000) / 10000; };
-    var vb = r4(VW.x) + ' ' + r4(VW.y) + ' ' + r4(VW.w) + ' ' + r4(VW.h);
-    if (hard || vb !== vbLast) { vbLast = vb; svg.setAttribute('viewBox', vb); }
-    var zoomed = Math.abs(VW.w - WD.w) > 0.01 || Math.abs(VW.x) > 0.01 || Math.abs(VW.y) > 0.01;
-    svg.classList.toggle('zoomed', zoomed); svg.classList.toggle('zlow', z < 0.6);
-    if (zoomUi) {
-      zoomUi.pct.textContent = Math.round(z * 100) + '%';
-      zoomUi.out.disabled = z <= ZMIN + 1e-6; zoomUi.in.disabled = z >= ZMAX - 1e-6; zoomUi.fit.disabled = !zoomed;
-    }
-  }
-  function viewChanged() {
-    hideTip(); paintView(false);
-    if (window.AosFx) { if (AosFx.refreshView) AosFx.refreshView(); if (!fxRaf) fxRaf = requestAnimationFrame(function () { fxRaf = 0; fxSync(); }); }
-  }
-  function setView(v) { VW = clampView(v); viewChanged(); }
-  function resetView() { VW = { x: 0, y: 0, w: WD.w, h: WD.h }; paintView(true); hideTip(); }
-  function zoomAt(z, cx, cy) {
-    z = clamp(z, ZMIN, ZMAX); var p = svgPt({ clientX: cx, clientY: cy }), w = WD.w / z, k = w / VW.w;
-    setView({ x: p.x - (p.x - VW.x) * k, y: p.y - (p.y - VW.y) * k, w: w, h: WD.h / z });
-  }
-  function zoomMid(f) { var r = $('graph').getBoundingClientRect(); zoomAt(WD.w / VW.w * f, r.left + r.width / 2, r.top + r.height / 2); }
-  function panPx(dx, dy) { var k = pxPerUnit(); setView({ x: VW.x - dx / k, y: VW.y - dy / k, w: VW.w, h: VW.h }); }
-  function onBg(t) { return !(t && t.closest && t.closest('.node, .orch, .chip, [tabindex], button, a')); }
-  (function wireView() {
-    var svg = $('graph'), ptr = {}, pan = null, pinch = null, g0 = 1;
-    function ids() { return Object.keys(ptr); }
-    function dist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)) || 1; }
-    svg.addEventListener('wheel', function (e) {
+  var cancelers = [];
+  function cancelDrags() { cancelers.forEach(function (f) { try { f(); } catch (e) {} }); }
+  window.addEventListener('blur', cancelDrags);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) cancelDrags(); });
+  function wireDrag(g, id, open) {
+    var st = null;
+    cancelers.push(function () { if (st) end({ pointerId: st.pid }); });
+    g.addEventListener('pointerdown', function (e) {
+      if (e.button != null && e.button > 0) return;
+      var n = N[id]; if (!n) return; var pt = svgPt(e);
+      st = { pid: e.pointerId, sx: pt.x, sy: pt.y, ox: n.dx, oy: n.dy, moved: false, cx: e.clientX, cy: e.clientY };
+      try { g.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    g.addEventListener('pointermove', function (e) {
+      if (!st || e.pointerId !== st.pid) return;
+      var n = N[id]; if (!n) return;
+      if (!st.moved) {
+        var ddx = e.clientX - st.cx, ddy = e.clientY - st.cy; if (ddx * ddx + ddy * ddy < 36) return;
+        st.moved = true; touched = true;
+        if (tw) { NL.forEach(function (q) { q.x = q.dx; q.y = q.dy; }); tw = null; }
+        dragId = id; g.classList.add('dragging'); hideTip(); if (!REDUCED) { sim.on = true; sim.steps = 0; sim.still = 0; }
+      }
       e.preventDefault();
-      var dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-      var f = clamp(Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), 0.7, 1.43);
-      zoomAt(WD.w / VW.w * f, e.clientX, e.clientY);
-    }, { passive: false });
-    svg.addEventListener('pointerdown', function (e) {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      if (!onBg(e.target)) return;
-      ptr[e.pointerId] = { x: e.clientX, y: e.clientY };
-      var k = ids();
-      if (k.length === 1) pan = { id: e.pointerId, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, on: false };
-      else if (k.length === 2) {
-        var a = ptr[k[0]], b = ptr[k[1]]; pan = null;
-        pinch = { d: dist(a, b), z: WD.w / VW.w, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
-        try { svg.setPointerCapture(e.pointerId); } catch (er) {}
-      }
+      var pt = svgPt(e), c = clampTo(n, st.ox + pt.x - st.sx, st.oy + pt.y - st.sy), ddx2 = c[0] - n.x, ddy2 = c[1] - n.y;
+      n.x = c[0]; n.y = c[1];
+      if (REDUCED) {
+        if (n.kind === 'hub') (n.kids || []).forEach(function (k) { var q = N[k]; if (q && !pins[k]) { q.x += ddx2; q.y += ddy2; q.dx = q.x; q.dy = q.y; } });
+        n.dx = n.x; n.dy = n.y; sidesAll(); writeDom(); fxSync();
+      } else kickRaf();
     });
-    svg.addEventListener('pointermove', function (e) {
-      if (!ptr[e.pointerId]) return;
-      ptr[e.pointerId] = { x: e.clientX, y: e.clientY };
-      if (pinch && ids().length >= 2) {
-        var k = ids(), a = ptr[k[0]], b = ptr[k[1]], cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-        zoomAt(pinch.z * dist(a, b) / pinch.d, cx, cy); panPx(cx - pinch.cx, cy - pinch.cy);
-        e.preventDefault(); return;
+    function end(e) {
+      if (!st || (e && e.pointerId !== st.pid)) return;
+      var moved = st.moved; st = null;
+      try { g.releasePointerCapture(e.pointerId); } catch (err) {}
+      g.classList.remove('dragging');
+      if (moved) {
+        suppressClick = Date.now(); dragId = null;
+        if (pins[id]) pinNode(id);
+        if (REDUCED) { if (pendingPlan) { pendingPlan = false; plan(false); } settleNow(); }
+        else { sim.on = true; sim.steps = 0; sim.still = 0; kickRaf(); }
       }
-      if (pan && e.pointerId === pan.id) {
-        if (!pan.on) {
-          var ddx = e.clientX - pan.sx, ddy = e.clientY - pan.sy; if (ddx * ddx + ddy * ddy <= 16) return;
-          pan.on = true; svg.classList.add('panning'); try { svg.setPointerCapture(e.pointerId); } catch (er) {}
-        }
-        panPx(e.clientX - pan.lx, e.clientY - pan.ly); pan.lx = e.clientX; pan.ly = e.clientY; e.preventDefault();
-      }
-    });
-    function up(e) {
-      if (!ptr[e.pointerId]) return;
-      delete ptr[e.pointerId];
-      try { svg.releasePointerCapture(e.pointerId); } catch (er) {}
-      if (pinch && ids().length < 2) { pinch = null; var k = ids(); if (k.length === 1) { var q = ptr[k[0]]; pan = { id: +k[0], sx: q.x, sy: q.y, lx: q.x, ly: q.y, on: true }; } }
-      if (pan && e.pointerId === pan.id) pan = null;
-      if (!ids().length) { pan = null; pinch = null; svg.classList.remove('panning'); }
     }
-    svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up); svg.addEventListener('lostpointercapture', up);
-    window.addEventListener('blur', function () { ptr = {}; pan = null; pinch = null; svg.classList.remove('panning'); });
-    svg.addEventListener('dblclick', function (e) { if (!onBg(e.target)) return; e.preventDefault(); zoomAt(WD.w / VW.w * (e.shiftKey ? 0.5 : 2), e.clientX, e.clientY); });
-    /* Safari trackpad pinch */
-    svg.addEventListener('gesturestart', function (e) { e.preventDefault(); g0 = WD.w / VW.w; });
-    svg.addEventListener('gesturechange', function (e) { e.preventDefault(); zoomAt(g0 * e.scale, e.clientX, e.clientY); });
-    svg.addEventListener('gestureend', function (e) { e.preventDefault(); });
-    /* keyboard: + - 0 and arrows, only when focus is on the page body or inside the graph */
-    document.addEventListener('keydown', function (e) {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      var t = e.target, tag = t && t.tagName;
-      if (!(t === document.body || t === document.documentElement || svg.contains(t))) return;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      var k = e.key, d = e.shiftKey ? 120 : 40;
-      if (k === '+' || k === '=') zoomMid(1.25);
-      else if (k === '-' || k === '_') zoomMid(0.8);
-      else if (k === '0') { VW = { x: 0, y: 0, w: WD.w, h: WD.h }; viewChanged(); }
-      else if (/^Arrow(Left|Right|Up|Down)$/.test(k) && !document.body.classList.contains('aos-replay-open')) panPx(k === 'ArrowLeft' ? d : k === 'ArrowRight' ? -d : 0, k === 'ArrowUp' ? d : k === 'ArrowDown' ? -d : 0);
-      else return;
-      e.preventDefault();
+    g.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    g.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+    g.addEventListener('pointerup', function (e) { if (st && !st.moved && e.pointerType === 'touch') { st = null; open(); return; } end(e); });
+    g.addEventListener('pointercancel', end);
+    g.addEventListener('click', function () { if (Date.now() - suppressClick < 400) return; open(); });
+    g.addEventListener('dblclick', function () { if (pins[id]) unpinNode(id); else pinNode(id); });
+    g.addEventListener('lostpointercapture', function (e) { if (st && e.pointerId === st.pid) end(e); });
+    g.addEventListener('keydown', function (e) {
+      var k = e.key, d = e.shiftKey ? 32 : 8, dx = k === 'ArrowLeft' ? -d : k === 'ArrowRight' ? d : 0, dy = k === 'ArrowUp' ? -d : k === 'ArrowDown' ? d : 0;
+      if (!dx && !dy) return;
+      e.preventDefault(); var n = N[id]; if (!n) return;
+      if (tw) { NL.forEach(function (q) { q.x = q.dx; q.y = q.dy; }); tw = null; }
+      var c = clampTo(n, n.x + dx / WD.s, n.y + dy / WD.s); n.x = c[0]; n.y = c[1]; pinNode(id); settleNow();
     });
-    /* on-screen controls, lower right of the graph panel */
-    var box = document.createElement('div'); box.className = 'zoom-ctl'; box.id = 'zoom-ctl'; box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Graph zoom');
-    function mk(txt, label, fn) { var b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.setAttribute('aria-label', label); b.title = label; b.addEventListener('click', fn); return b; }
-    var out = mk('\u2212', 'Zoom out (-)', function () { zoomMid(0.8); }), inn = mk('+', 'Zoom in (+)', function () { zoomMid(1.25); }),
-      fit = mk('Fit', 'Fit the whole graph to the view (0)', function () { VW = { x: 0, y: 0, w: WD.w, h: WD.h }; viewChanged(); }),
-      pct = document.createElement('span'); pct.className = 'zoom-pct'; pct.textContent = '100%'; pct.setAttribute('aria-hidden', 'true');
-    box.appendChild(out); box.appendChild(pct); box.appendChild(inn); box.appendChild(fit);
-    $('stage').appendChild(box);
-    zoomUi = { out: out, in: inn, fit: fit, pct: pct }; paintView(false);
-  })();
+  }
   /* ---------- hover / focus tooltip: fixed-position, pointer-events none, no layout effect ---------- */
   var tipEl = null, tipT = 0, tipFor = null;
   function hideTip() { clearTimeout(tipT); tipT = 0; tipFor = null; if (tipEl) tipEl.classList.remove('show'); }
@@ -1216,7 +1188,7 @@
   }
   function wireTip(g, id) {
     function arm() { hideTip(); tipT = setTimeout(function () { showTip(g, id); }, 200); }
-    g.addEventListener('pointerenter', function (e) { if (e.pointerType === 'touch') return; arm(); });
+    g.addEventListener('pointerenter', function (e) { if (e.pointerType === 'touch' || dragId) return; arm(); });
     g.addEventListener('pointerleave', hideTip);
     g.addEventListener('pointerdown', hideTip);
     g.addEventListener('focus', arm);
@@ -1271,9 +1243,20 @@
 
   function wireNode(g, id, open) {
     wireTip(g, id);
-    wireClick(g, id, open);
+    wireDrag(g, id, open);
     g.addEventListener('keydown', keyAct(open));
   }
+  function resetLayout() {
+    pins = {}; savePins(); touched = false; if (!state) return;
+    if (tw) { NL.forEach(function (q) { q.x = q.dx; q.y = q.dy; }); tw = null; } sim.on = false;
+    plan(true); updateContent(); startTween(520);
+  }
+  (function () {
+    var b = document.createElement('button'); b.id = 'reset-layout'; b.type = 'button'; b.className = 'linkbtn reset-layout'; b.textContent = 'reset layout';
+    b.setAttribute('title', 'Unpin all nodes and re-run the default layout. Drag a node to move it, double-click to pin or unpin.');
+    b.addEventListener('click', resetLayout);
+    $('stage').appendChild(b);
+  })();
   /* ---------- diff / animate ---------- */
   function diff() {
     if (!prev) return;
@@ -1523,6 +1506,12 @@
       var ids = {}; mine.forEach(function (t) { ids[t.id] = 1; });
       evList(body, (state.events || []).filter(function (e) { return e.actor === a.id || (e.task_id && ids[e.task_id]); }));
     }
+    var pid = selected;
+    if (N[pid] && N[pid].kind !== 'heart') {
+      var pb = el('button', 'linkbtn pin-btn', pins[pid] ? 'unpin position' : 'pin position'); pb.type = 'button'; pb.setAttribute('aria-pressed', String(!!pins[pid]));
+      pb.addEventListener('click', function () { if (pins[pid]) unpinNode(pid); else pinNode(pid); });
+      body.insertBefore(pb, body.firstChild);
+    }
     var wasHidden = dr.hidden; dr.hidden = false; $('dr-body').scrollTop = sc;
     if (!wasHidden) { var kids = body.children; for (var i = 0; i < kids.length; i++) kids[i].style.animation = 'none'; }
   }
@@ -1682,7 +1671,7 @@
   function sizeGate(ap, q) { return !ap || q.m !== ap.m || Math.abs(q.w - ap.w) > 24 || (!q.m && Math.abs(q.h - ap.h) > 24); }
   function quant(w, h, m) { return { w: Math.max(296, Math.round(w / 8) * 8), h: m ? 0 : Math.max(296, Math.round(h / 8) * 8), m: !!m }; }
   window.__aosSizeGate = sizeGate; window.__aosQuant = quant; window.__aosFmtRan = fmtRan;
-  window.__aosReplan = function () { plan(true); commit(); return { fit: WD.fit, lvl: LVL, s: WD.s }; };
+  window.__aosReplan = function () { plan(true); startTween(0); return { fit: WD.fit, lvl: LVL, s: WD.s }; };
   function onResize() {
     var q = panelQ();
     if (!sizeGate(applied, q)) return;
@@ -1715,8 +1704,8 @@
     AosFx.sync({ state: state, edges: ed, nodes: nd, deps: dp, cx: H ? H.dx : WD.hx, cy: H ? H.dy : WD.hy, mobile: !!L.mobile, cw: L.cw, ch: L.ch, graph: $('graph') });
     if (AosFx.invalidate) AosFx.invalidate();
   }
-  window.__aosGraph = function () { return { fit: WD.fit, lvl: LVL, s: WD.s, w: WD.w, h: WD.h, runs: layoutRuns, frames: 0, sleeping: true, view: { x: VW.x, y: VW.y, w: VW.w, h: VW.h, z: WD.w / VW.w }, bad: violations(), sig: SIG, why: (function () { DBG = []; relax(0.6, true); var d = DBG; DBG = null; return d; })(),
-    nodes: NL.map(function (n) { return { id: n.id, kind: n.kind, x: n.x, y: n.y, dx: n.dx, dy: n.dy, side: n.side, lab: [n.x + n.rx1, n.y + n.ry1, n.x + n.rx2, n.y + n.ry2], R: n.R }; }) }; };
+  window.__aosGraph = function () { return { fit: WD.fit, lvl: LVL, s: WD.s, w: WD.w, h: WD.h, runs: layoutRuns, frames: simFrames, sleeping: !sim.on && !tw && !raf, bad: violations(), sig: SIG, why: (function () { DBG = []; relax(0.6, true); var d = DBG; DBG = null; return d; })(),
+    nodes: NL.map(function (n) { return { id: n.id, kind: n.kind, x: n.x, y: n.y, dx: n.dx, dy: n.dy, side: n.side, pinned: !!pins[n.id], lab: [n.x + n.rx1, n.y + n.ry1, n.x + n.rx2, n.y + n.ry2], R: n.R }; }) }; };
   applied = panelQ(); computeLayout(applied); ensureOrch(); renderOrch();
   setInterval(function () { if (state) { renderOrch(); renderStats(); updateRel(); if (selected === 'orch') renderDrawer(); if (selected) tickDrawer(); } }, 1000);
   setInterval(poll, POLL_MS);

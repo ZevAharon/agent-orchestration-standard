@@ -466,7 +466,7 @@ table.ev{font-size:13px}
 }
 
 /* ================= v7: drag / pin / model label ================= */
-.node{transition:opacity .45s;cursor:pointer}
+.node{transition:opacity .45s;cursor:grab;touch-action:none}
 .chip{transition:opacity .45s}
 .node.leaving,.chip.leaving{opacity:0;pointer-events:none}
 .agent .model{font:600 11px/1 var(--mono);letter-spacing:.1em;fill:var(--muted)}
@@ -563,17 +563,16 @@ table.ev{font-size:13px}
 .tcard-m .ran,.tcard-m .tpm{font-family:var(--mono);color:var(--text-2)}
 @media (max-width:720px){html{scrollbar-gutter:stable}}
 
-
-/* ================= pan / zoom (graph viewBox only) ================= */
-#graph{cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
-#graph.panning{cursor:grabbing}
-#graph.zoomed{overflow:hidden}
-#graph.zlow .agent .sub,#graph.zlow .agent .model{opacity:0}
-.zoom-ctl{position:absolute;right:24px;top:16px;z-index:4;display:flex;align-items:center;gap:2px;font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.zoom-ctl button{all:unset;box-sizing:border-box;min-width:26px;height:26px;display:inline-grid;place-items:center;padding:0 6px;border-radius:3px;cursor:pointer;color:var(--muted);font:600 13px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase}
-.zoom-ctl button:last-child{font-size:11px;letter-spacing:.14em}
-.zoom-ctl button:hover:not(:disabled){color:var(--accent-hi);background:var(--hover)}
-.zoom-ctl button:focus-visible{outline:1px solid var(--accent-hi);outline-offset:1px}
-.zoom-ctl button:disabled{opacity:.38;cursor:default}
-.zoom-pct{min-width:4.4ch;text-align:center;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:.06em}
-@media (max-width:720px){#graph{touch-action:pan-y}#graph.zoomed{touch-action:none}.zoom-ctl{right:14px;top:auto;bottom:34px}body.aos-replay-open .zoom-ctl{bottom:58px}}
+.node.dragging{cursor:grabbing}
+.node.dragging,.node.dragging *{-webkit-user-select:none;user-select:none}
+.agent .pinmark{fill:var(--accent);opacity:0}
+.agent.pinned .pinmark{opacity:.95}
+.agent.pinned .card,.orch.pinned .core-bg{stroke-dasharray:2 3}
+.orch.pinned .core-bg{stroke:rgba(var(--accent-rgb)/.7)}
+.reset-layout{position:absolute;right:24px;top:16px;z-index:3;margin:0;font-size:11.5px;opacity:.85}
+.reset-layout:hover{opacity:1}
+@media (max-width:720px){.reset-layout{right:14px;top:auto;bottom:34px}}
+.pin-btn{margin:0 0 6px;align-self:auto;display:block}
+.hub .pinmark{fill:var(--accent);opacity:0}
+.hub.pinned .pinmark{opacity:.95}
+.hub.pinned .card{stroke-dasharray:3 3}

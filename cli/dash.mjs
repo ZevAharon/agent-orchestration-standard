@@ -410,11 +410,11 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
   const bboxOf = (R) => {
     let x0 = R.cx, x1 = R.cx, y0 = R.cy, y1 = R.cy;
     const add = (a, b, c, d) => { x0 = Math.min(x0, a); x1 = Math.max(x1, b); y0 = Math.min(y0, c); y1 = Math.max(y1, d); };
-    const txt = (b, lines, side) => { const w = Math.max(...lines.map(segW)); const a = side === 'left' ? b.x0 + b.w - w : side === 'right' ? b.x0 : b.x0 + Math.floor((b.w - w) / 2); add(a, a + w - 1, b.y0, b.y0 + b.h - 1); };
-    txt(R.cbox, R.cinfo.lines, 'top');
+    // footprints, not live text widths: the scale must not depend on status
+    add(R.cx - 11, R.cx + 10, R.cbox.y0, R.cbox.y0 + R.cbox.h - 1);
     for (const o of R.orbs) add(o.x, o.x, o.y, o.y);
     for (const h of R.hubs) add(h.x, h.x, h.y, h.y);
-    for (const l of R.labels) txt(l, l.lines, l.side);
+    for (const l of R.labels) add(l.x0, l.x0 + l.w - 1, l.y0, l.y0 + l.h - 1);
     return { x0, x1, y0, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
   };
   const scaleUp = (base, bp) => {
@@ -427,13 +427,20 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
     };
     const fill = (R) => { const b = bboxOf(R); return b.w <= 0.92 * cols && b.h <= 0.92 * H ? Math.min(b.w / cols, b.h / H) : -1; };
     let best = base, bf = fill(base), bpar = null;
-    for (const u of [1, 0.85, 0.7, 0.55, 0.4, 0.25, 0.1]) for (const ax of [1, 1.35, 1.8]) for (const ay of [1, 1.35, 1.8]) {
-      const S = { sx: Math.min(4, (1 + (capx - 1) * u) * ax), sy: Math.min(4, (1 + (capy - 1) * u) * ay) };
-      for (const f of [0.9, 0.82, 0.74, 0.66, 0.58, 0.5, 0.43, 0.36, bp[0]]) {
-        startHeart();
-        const R = attempt(f, bp[1], bp[2], bp[3], S); if (!R) continue;
-        const v = fill(R); if (v > bf + 1e-9) { best = R; bf = v; bpar = [f, S]; }
-      }
+    const lst = (cap, lo) => [...lo, 1, 1.5, 2, 2.5, 3, 3.6, 4.4].filter((v) => v <= Math.max(1, Math.min(4.4, cap * 1.4)) + 1e-9);
+    const tryP = (sx, sy, f) => {
+      startHeart();
+      const R = attempt(f, bp[1], bp[2], bp[3], { sx, sy }); if (!R) return;
+      const v = fill(R); if (v > bf + 1e-9) { best = R; bf = v; bpar = [f, { sx, sy }]; }
+    };
+    for (const lo of [[], [0.55, 0.7, 0.85]]) { // sub-1x only when the compact layout itself already overfills
+      if (bpar) break;
+      for (const sx of lst(capx, lo)) for (const sy of lst(capy, lo)) for (const f of [0.9, 0.78, 0.66, 0.55, 0.45, 0.36, bp[0]]) tryP(sx, sy, f);
+    }
+    // local refinement around the best coarse point
+    for (const d of bpar ? [0.4, 0.2, 0.1] : []) for (let round = 0; round < 2; round++) {
+      const [f0, { sx: x0, sy: y0 }] = bpar;
+      for (const dx of [-d, 0, d]) for (const dy of [-d, 0, d]) for (const df of [-d / 4, 0, d / 4]) if (dx || dy || df) tryP(Math.max(0.5, x0 + dx), Math.max(0.5, y0 + dy), Math.min(0.95, Math.max(0.2, f0 + df)));
     }
     if (!bpar) { setHeart(cxC, cyC); return attempt(bp[0], bp[1], bp[2], bp[3]) || base; }
     startHeart(); const R0 = attempt(bpar[0], bp[1], bp[2], bp[3], bpar[1]);

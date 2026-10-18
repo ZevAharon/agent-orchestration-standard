@@ -243,7 +243,8 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
   const { gap = 1, labels = 'full' } = opts; const orbsOnly = labels === null;
   const top = 2, bottom = orbsOnly ? rows - 3 : rows - 2;
   if (bottom - top < 6) return null;
-  const cx = Math.floor((cols - 1) / 2), cy = top + Math.floor((bottom - top) / 2);
+  const cxC = Math.floor((cols - 1) / 2), cyC = top + Math.floor((bottom - top) / 2);
+  let cx = cxC, cy = cyC;
   const W = labels === 'compact' ? 14 : 22; const levels = labels === 'compact' ? [3] : [0, 1, 2];
   const total = groups.reduce((n, g) => n + g.agents.length, 0);
   const sig = `${cols}x${rows}|${labels}|${gap}|${groups.map((g) => g.id).join('\u0001')}`;
@@ -256,6 +257,7 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
   const cbox = { x0: cx - Math.floor(cw / 2), y0: cy + 1, w: cw, h: clines.length };
   if (orbsOnly) { clines = clines.slice(0, Math.max(0, Math.min(clines.length, bottom - cbox.y0 + 1))); cbox.h = clines.length; }
   if (cbox.x0 < 0 || cbox.x0 + cbox.w > cols) return null;
+  const setHeart = (x, y) => { cx = x; cy = y; cbox.x0 = x - Math.floor(cw / 2); cbox.y0 = y + 1; };
   const cinfo = { status: cstatus, lines: clines };
 
   const occ = new Uint8Array(cols * rows);
@@ -304,11 +306,11 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
   let acc = -TAU * wts[0] / sw / 2; // first project faces right, the rest follow clockwise
   const hubs = groups.map((g, i) => { const Wd = TAU * wts[i] / sw; const th = acc + Wd / 2; acc += Wd; return { g, Wd, th, lines: orbsOnly ? [] : hubLines(g, labels, W), box: null }; });
   if (groups.length === 1) { // side with the most free room (default right)
-    const rooms = [[cols - 1 - cx, 0], [cx, Math.PI], [(bottom - cy) * 2, Math.PI / 2], [(cy - top) * 2, -Math.PI / 2]];
+    const rooms = [[cols - 1 - cxC, 0], [cxC, Math.PI], [(bottom - cyC) * 2, Math.PI / 2], [(cyC - top) * 2, -Math.PI / 2]];
     let best = rooms[0]; for (const r of rooms) if (r[0] > best[0] + 3) best = r;
     hubs[0].th = best[1];
   }
-  const ex = Math.min(cx, cols - 1 - cx) - 1, ey = Math.min(cy - top, bottom - cy);
+  const ex = Math.min(cxC, cols - 1 - cxC) - 1, ey = Math.min(cyC - top, bottom - cyC); // hub reach from the centred frame (independent of where the heart sits)
   const idealPos = (h, k, n) => {
     const par = h.par; const phi = h.th + (k - (n - 1) / 2) * par.step;
     return { phi, x: h.x + Math.round(par.arx * Math.cos(phi)), y: h.y + Math.round(par.ary * Math.sin(phi)) };
@@ -326,7 +328,7 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
         if (p.box) labs.push({ id: a.id, ...p.box, side: p.side, lines: p.lines });
       }
     });
-    return { graph: true, cx, cy, cinfo, cbox, orbs, labels: labs, hubs: hubsOut, mode: 'ring', labelMode: orbsOnly ? null : labels, snap: { hubs: hubs.map((h) => ({ id: h.g.id, x: h.x, y: h.y, th: h.th, par: h.par, box: h.box })), place } };
+    return { graph: true, cx, cy, cinfo, cbox: { ...cbox }, orbs, labels: labs, hubs: hubsOut, mode: 'ring', labelMode: orbsOnly ? null : labels, snap: { cx, cy, hubs: hubs.map((h) => ({ id: h.g.id, x: h.x, y: h.y, th: h.th, par: h.par, box: h.box })), place } };
   };
   const nearestOwn = (place) => {
     if (hubs.length < 2 || orbsOnly) return true;
@@ -337,7 +339,7 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
     return true;
   };
 
-  const attempt = (f, kx, s, sm) => {
+  const attempt = (f, kx, s, sm, S = null) => {
     reset();
     for (const h of hubs) {
       h.x = cx + Math.round(f * ex * Math.cos(h.th)); h.y = cy + Math.round(f * ey * Math.sin(h.th)); h.box = null;
@@ -350,7 +352,7 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
       const n = h.g.agents.length; const spanMax = groups.length === 1 ? Math.PI * 4 / 3 : Math.min(Math.PI * 4 / 3, Math.max(1.2, h.Wd * sm));
       const span = Math.min(spanMax, 0.62 * (n - 1)); const step = n > 1 ? span / (n - 1) : 0;
       const ary = s * Math.max(5, 3.4 / Math.max(step, 0.12));
-      h.par = { arx: kx * ary, ary, step };
+      h.par = S ? { arx: kx * ary * S.sx, ary: ary * S.sy, step } : { arx: kx * ary, ary, step };
       for (let k = 0; k < n; k++) {
         const a = h.g.agents[k]; const id = idealPos(h, k, n);
         let [x, y] = clampIn(id.x, id.y);
@@ -369,6 +371,7 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
 
   // incremental: keep every existing cell, put new agents on the nearest free cells
   const incremental = (prev) => {
+    if (prev.cx !== undefined) setHeart(prev.cx, prev.cy);
     reset();
     const place = new Map();
     for (let i = 0; i < hubs.length; i++) {
@@ -403,11 +406,62 @@ function layoutGraph(groups, nMains, cols, rows, opts = {}, cache = null) {
     return nearestOwn(place) ? finalize(place) : null;
   };
 
+  // Scale-up: the compact layout is the 1x floor; bigger terminals spread distances (never label sizes) towards ~85-92% of the usable area.
+  const bboxOf = (R) => {
+    let x0 = R.cx, x1 = R.cx, y0 = R.cy, y1 = R.cy;
+    const add = (a, b, c, d) => { x0 = Math.min(x0, a); x1 = Math.max(x1, b); y0 = Math.min(y0, c); y1 = Math.max(y1, d); };
+    // footprints, not live text widths: the scale must not depend on status
+    add(R.cx - 11, R.cx + 10, R.cbox.y0, R.cbox.y0 + R.cbox.h - 1);
+    for (const o of R.orbs) add(o.x, o.x, o.y, o.y);
+    for (const h of R.hubs) add(h.x, h.x, h.y, h.y);
+    for (const l of R.labels) add(l.x0, l.x0 + l.w - 1, l.y0, l.y0 + l.h - 1);
+    return { x0, x1, y0, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  };
+  const scaleUp = (base, bp) => {
+    const capx = Math.min(3, Math.max(1, cols / 100)), capy = Math.min(3, Math.max(1, (bottom - top + 1) / 30));
+    const H = bottom - top + 1; const single = groups.length === 1; const th0 = hubs[0].th;
+    const startHeart = () => {
+      if (!single) return setHeart(cxC, cyC);
+      const c = Math.cos(th0), sn = Math.sin(th0);
+      setHeart(c > 0.5 ? 1 + Math.floor(cw / 2) : c < -0.5 ? cols - 2 - Math.floor(cw / 2) : cxC, sn > 0.5 ? top + 1 : sn < -0.5 ? bottom - 4 : cyC);
+    };
+    const fill = (R) => { const b = bboxOf(R); return b.w <= 0.92 * cols && b.h <= 0.92 * H ? Math.min(b.w / cols, b.h / H) : -1; };
+    let best = base, bf = fill(base), bpar = null;
+    const lst = (cap, lo) => [...lo, 1, 1.5, 2, 2.5, 3, 3.6, 4.4].filter((v) => v <= Math.max(1, Math.min(4.4, cap * 1.4)) + 1e-9);
+    const tryP = (sx, sy, f) => {
+      startHeart();
+      const R = attempt(f, bp[1], bp[2], bp[3], { sx, sy }); if (!R) return;
+      const v = fill(R); if (v > bf + 1e-9) { best = R; bf = v; bpar = [f, { sx, sy }]; }
+    };
+    for (const lo of [[], [0.55, 0.7, 0.85]]) { // sub-1x only when the compact layout itself already overfills
+      if (bpar) break;
+      for (const sx of lst(capx, lo)) for (const sy of lst(capy, lo)) for (const f of [0.9, 0.78, 0.66, 0.55, 0.45, 0.36, bp[0]]) tryP(sx, sy, f);
+    }
+    // local refinement around the best coarse point
+    for (const d of bpar ? [0.4, 0.2, 0.1] : []) for (let round = 0; round < 2; round++) {
+      const [f0, { sx: x0, sy: y0 }] = bpar;
+      for (const dx of [-d, 0, d]) for (const dy of [-d, 0, d]) for (const df of [-d / 4, 0, d / 4]) if (dx || dy || df) tryP(Math.max(0.5, x0 + dx), Math.max(0.5, y0 + dy), Math.min(0.95, Math.max(0.2, f0 + df)));
+    }
+    if (!bpar) { setHeart(cxC, cyC); return attempt(bp[0], bp[1], bp[2], bp[3]) || base; }
+    startHeart(); const R0 = attempt(bpar[0], bp[1], bp[2], bp[3], bpar[1]);
+    if (single && R0) { // centre the whole composition
+      const b = bboxOf(R0);
+      const dx = Math.round((cols - 1) / 2 - (b.x0 + b.x1) / 2), dy = Math.round((top + bottom) / 2 - (b.y0 + b.y1) / 2);
+      setHeart(cx + dx, cy + dy); const R1 = attempt(bpar[0], bp[1], bp[2], bp[3], bpar[1]);
+      if (R1) return R1;
+      startHeart(); return attempt(bpar[0], bp[1], bp[2], bp[3], bpar[1]);
+    }
+    return R0 || best;
+  };
+
   const prev = cache && cache.layouts.get(sig);
   let L = prev ? incremental(prev) : null;
   if (!L) {
+    setHeart(cxC, cyC);
     const F = orbsOnly ? [0.38] : [0.38, 0.3, 0.46, 0.53], KX = orbsOnly ? [2] : [2, 3, 4], S = orbsOnly ? [1] : [1, 1.25, 1.5, 1.8, 2.2, 0.8], SM = orbsOnly ? [1.5] : [1.5, 2.2];
-    search: for (const sm of SM) for (const f of F) for (const s of S) for (const kx of KX) { L = attempt(f, kx, s, sm); if (L) break search; }
+    let bp = null;
+    search: for (const sm of SM) for (const f of F) for (const s of S) for (const kx of KX) { L = attempt(f, kx, s, sm); if (L) { bp = [f, kx, s, sm]; break search; } }
+    if (L && !orbsOnly && (cols > 100 || rows > 30)) L = scaleUp(L, bp);
   }
   if (cache) { if (L) { cache.layouts.set(sig, L.snap); cache.fails.delete(sig); } else cache.fails.set(sig, total); }
   return L;
