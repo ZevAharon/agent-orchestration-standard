@@ -8,7 +8,7 @@ MARKET     := aos-local
 PORT       ?= 4318
 DATA       := $(HOME)/.claude/plugins/data/aos-dashboard-aos-local
 AOS        := node scripts/aos.mjs
-ENSURE     := CLAUDE_PLUGIN_ROOT=$(REPO)/plugin CLAUDE_PLUGIN_DATA=$(DATA) AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
+ENSURE     := CLAUDE_PLUGIN_ROOT="$(REPO)/plugin" CLAUDE_PLUGIN_DATA="$(DATA)" AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
 
 .DEFAULT_GOAL := help
 .PHONY: help install uninstall build validate test doctor start stop restart open demo link unlink statusline statusline-off notifier screenshots
@@ -20,7 +20,7 @@ help: ## Show this list
 
 install: check build validate ## Install everything: build, register + install the plugin, link `aos-dash`, build the notifier, start the monitor
 	@echo "==> registering the local marketplace"
-	@claude plugin marketplace add $(REPO) 2>&1 | tail -1 || true
+	@claude plugin marketplace add "$(REPO)" 2>&1 | tail -1 || true
 	@echo "==> installing $(PLUGIN)"
 	@claude plugin install $(PLUGIN) 2>&1 | tail -1 || true
 	@$(MAKE) --no-print-directory link

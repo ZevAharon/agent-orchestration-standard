@@ -95,7 +95,8 @@ const MAX_RECS = 50000;
 let recs = [], off = 0, ino = null, carry = Buffer.alloc(0), ingestSig = '';
 const tpSess = new Map(), tpAgent = new Map(); // sid -> transcript path ; sid:agent_id -> path
 function ingest1(r) {
-  if (!r || typeof r !== 'object' || !r.ts || !Number.isFinite(Date.parse(r.ts))) return;
+  if (!r || typeof r !== 'object' || typeof r.ts !== 'string' || !Number.isFinite(Date.parse(r.ts))) return;
+  if ((r.sid != null && typeof r.sid !== 'string') || (r.f != null && typeof r.f !== 'string')) return; // fold() needs strings here
   recs.push(r);
   if (typeof r.tp === 'string' && r.tp.endsWith('.jsonl') && path.isAbsolute(r.tp) && r.sid) {
     if (r.ev === 'SubagentStop' && r.agent_id) tpAgent.set(r.sid + ':' + r.agent_id, r.tp); else if (!r.agent_id) tpSess.set(r.sid, r.tp);
@@ -128,7 +129,7 @@ function ingest() {
 const TR = new Map(), seenMsg = new Set();
 function pump(p) {
   let t = TR.get(p);
-  if (!t) { t = { off: 0, carry: Buffer.alloc(0), tot: zero(), by: {}, model: null, last: 0 }; TR.set(p, t); if (TR.size > 500) TR.delete(TR.keys().next().value); }
+  if (!t) { t = { off: 0, carry: Buffer.alloc(0), tot: zero(), by: Object.create(null), model: null, last: 0 }; TR.set(p, t); if (TR.size > 500) TR.delete(TR.keys().next().value); }
   const now = Date.now();
   if (now - t.last < 2000) return t;
   t.last = now;
@@ -136,7 +137,7 @@ function pump(p) {
   try {
     fd = fs.openSync(p, 'r');
     const st = fs.fstatSync(fd);
-    if (st.size < t.off) { t.off = 0; t.carry = Buffer.alloc(0); t.tot = zero(); t.by = {}; }
+    if (st.size < t.off) { t.off = 0; t.carry = Buffer.alloc(0); t.tot = zero(); t.by = Object.create(null); }
     let budget = 32 * 1024 * 1024;
     while (t.off < st.size && budget > 0) {
       const len = Math.min(st.size - t.off, 1024 * 1024), buf = Buffer.alloc(len);
@@ -483,7 +484,7 @@ function fold(list, ref) {
   for (const a of alerts) a.project = labelName.get(a.agent) || 'unknown';
 
   // cost: totals across every transcript referenced by agents in this window (incl. finished ones)
-  const by_model = {}, tot = zero();
+  const by_model = Object.create(null), tot = zero(); // model ids come from transcripts: no prototype keys
   for (const p of used) { const t = TR.get(p); if (!t) continue; for (const [m, u] of Object.entries(t.by)) add(by_model[m] = by_model[m] || { ...zero(), _p: 1 }, u); }
   let total = 0, anyP = false;
   for (const [m, u] of Object.entries(by_model)) { delete u._p; add(tot, u); const v = usd(u, m); u.usd_est = v; if (v !== null) { total += v; anyP = true; } }

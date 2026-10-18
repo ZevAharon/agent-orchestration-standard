@@ -15,7 +15,7 @@ const DATA = path.join(HOME, '.claude', 'plugins', 'data', 'aos-dashboard-aos-lo
 const SETTINGS = path.join(HOME, '.claude', 'settings.json');
 const BIN = process.env.BIN || path.join(HOME, '.local', 'bin');
 const PORT = Number(process.env.PORT || process.env.AOS_PORT) || 4318;
-const STATUSLINE_CMD = `node ${path.join(REPO, 'plugin', 'bin', 'aos-statusline.mjs')}`;
+const STATUSLINE_CMD = `node "${path.join(REPO, 'plugin', 'bin', 'aos-statusline.mjs')}"`;
 
 const ok = (s) => console.log(`  ✓ ${s}`), bad = (s) => console.log(`  ✗ ${s}`), warn = (s) => console.log(`  ! ${s}`);
 const run = (cmd, args) => { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }); } catch (e) { return null; } };
