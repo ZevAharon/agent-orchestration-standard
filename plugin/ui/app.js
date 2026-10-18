@@ -1713,6 +1713,7 @@
     nodes: NL.map(function (n) { return { id: n.id, kind: n.kind, x: n.x, y: n.y, dx: n.dx, dy: n.dy, side: n.side, lab: [n.x + n.rx1, n.y + n.ry1, n.x + n.rx2, n.y + n.ry2], R: n.R }; }) }; };
   applied = panelQ(); computeLayout(applied); ensureOrch(); renderOrch();
   setInterval(function () { if (state) { renderOrch(); renderStats(); updateRel(); if (selected === 'orch') renderDrawer(); if (selected) tickDrawer(); } }, 1000);
-  setInterval(poll, POLL_MS);
+  setInterval(function () { if (!document.hidden || !state) poll(); }, POLL_MS); /* no polling in a background tab */
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
   poll();
 })();

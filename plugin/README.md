@@ -43,7 +43,7 @@ SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Per
   "stuck_after_s": 180,
   "stuck_after_s_by_model": { "opus": 600, "sonnet": 240, "haiku": 180 },
   "notify": { "enabled": true, "on": ["needs_input", "stuck"], "sound": false },
-  "projects": { "tom": "Home (~)" }
+  "projects": { "my-app": "My App" }
 }
 ```
 
@@ -57,10 +57,10 @@ Environment: `AOS_NO_AUTOSTART=1` disables the monitor autostart, `AOS_PORT` cha
 ## Privacy
 
 - Everything stays on this machine. The monitor binds 127.0.0.1 only and nothing is sent anywhere. The dashboard is read-only.
-- **Not stored:** prompts, command text, file contents, tool output, error messages, environment values.
-- **Stored (local log only):** event and tool names, truncated session IDs, agent IDs and types, the first word of a Bash command (when it is a plain word), short labels such as file basenames, the full path of files edited by Edit/Write tools (for conflict detection), the full working-folder path of each event (for project grouping), transcript paths (for token counts and model names), notification types, error categories, model IDs, task IDs.
-- The API, web UI, terminal view and MCP output show names and counts only, never full paths.
-- Data lives in `${CLAUDE_PLUGIN_DATA}/live` (or `AOS_LIVE_DIR`). Delete that folder to erase it.
+- **Not stored:** prompts, command lines (beyond the first word), file contents, tool output, error messages, notification text, environment values.
+- **Stored (local log only):** event and tool names, truncated session IDs, agent IDs and types, the first word of a Bash command (when it is a plain word), short labels such as file basenames and the short `description` of Agent/Task tool calls (up to 80 characters, token-like strings redacted; it names the subagent), the full path of files edited by Edit/Write tools (for conflict detection), the full working-folder path of each event (for project grouping), transcript paths (for token counts and model names), notification types, error categories, model IDs, task IDs.
+- The API, web UI, terminal view and MCP output show names and counts only, never full paths (a file conflict shows `parent-folder/file`).
+- Data lives in `${CLAUDE_PLUGIN_DATA}/live` (or `AOS_LIVE_DIR`). New files there are created owner-only (0600). The hook keeps one rotated copy (`hook-events.1.ndjson`, at 5 MB). Delete that folder to erase it.
 
 ## Layout
 

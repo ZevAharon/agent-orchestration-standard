@@ -70,6 +70,7 @@ export async function notify(opts = {}) {
   const dir = pinned ? dirname(app) : dataDir();
   const req = join(dir, 'notify-request.txt');
   const dry = process.env.AOS_NOTIFY_DRY === '1';
+  if (process.platform !== 'darwin' && !dry) return { ok: false, via: 'none', error: 'macOS only' };
 
   if (!existsSync(app) && !pinned && !dry) { try { build({ dir }); } catch {} }
   const via = existsSync(app) ? 'app' : 'osascript';

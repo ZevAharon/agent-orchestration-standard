@@ -18,7 +18,7 @@ const RUN_S = 900, SESSION_TTL_S = 3600, STALE_SUB_S = 600, INTERVAL_S = 30, TAI
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2' };
-const HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
+const HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' };
 const GOAL_ID = 'live-goal';
 
 // ---------- config / prices (mtime cached) ----------
@@ -92,7 +92,7 @@ function usd(u, model) {
 
 // ---------- incremental ndjson ingest (bounded) ----------
 const MAX_RECS = 50000;
-let recs = [], off = 0, carry = Buffer.alloc(0), ingestSig = '';
+let recs = [], off = 0, ino = null, carry = Buffer.alloc(0), ingestSig = '';
 const tpSess = new Map(), tpAgent = new Map(); // sid -> transcript path ; sid:agent_id -> path
 function ingest1(r) {
   if (!r || typeof r !== 'object' || !r.ts || !Number.isFinite(Date.parse(r.ts))) return;
@@ -106,7 +106,8 @@ function ingest() {
   try {
     fd = fs.openSync(FILE, 'r');
     const st = fs.fstatSync(fd);
-    if (st.size < off) { off = 0; carry = Buffer.alloc(0); } // rotated
+    if (st.size < off || (ino !== null && st.ino !== ino)) { off = 0; carry = Buffer.alloc(0); } // rotated (new inode) or truncated
+    ino = st.ino;
     let budget = 16 * 1024 * 1024;
     while (off < st.size && budget > 0) {
       const len = Math.min(st.size - off, 1024 * 1024), buf = Buffer.alloc(len);
@@ -390,7 +391,8 @@ function fold(list, ref) {
   for (const [f, m] of files) {
     const live = [...m].filter(([, ts]) => ts >= cut && ts <= ref);
     for (const [who, ts] of live) { if (!touched.has(who)) touched.set(who, []); touched.get(who).push({ f, ts }); }
-    if (live.length >= 2) collisions.push({ file: f, name: path.basename(f), agents: live.map(([w]) => w), ts: iso(Math.max(...live.map(([, ts]) => ts))) });
+    // file: parent folder + basename only, never the full path
+    if (live.length >= 2) collisions.push({ file: path.join(path.basename(path.dirname(f)), path.basename(f)), name: path.basename(f), agents: live.map(([w]) => w), ts: iso(Math.max(...live.map(([, ts]) => ts))) });
   }
   collisions.sort((a, b) => (a.ts < b.ts ? 1 : -1));
   const filesOf = (label) => { const seen = new Set(), out = []; for (const x of (touched.get(label) || []).sort((a, b) => b.ts - a.ts)) { const b = path.basename(x.f); if (!seen.has(b)) { seen.add(b); out.push(b); } if (out.length >= 8) break; } return out; };
@@ -641,7 +643,7 @@ function serveStatic(req, res, pathname) {
     const stat = fs.statSync(real);
     res.writeHead(200, { ...HEADERS, 'Content-Type': MIME[path.extname(real).toLowerCase()] || 'application/octet-stream', 'Content-Length': stat.size });
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(real).pipe(res);
+    fs.createReadStream(real).on('error', () => res.destroy()).pipe(res);
   } catch { send(res, 404, { error: 'not found' }); }
 }
 
@@ -666,6 +668,7 @@ const server = http.createServer((req, res) => {
     return serveStatic(req, res, pathname);
   } catch (e) { console.error(e); if (!res.headersSent) send(res, 500, { error: 'internal error' }); }
 });
+server.headersTimeout = 10000; server.requestTimeout = 15000;
 server.listen(PORT, HOST, () => console.log(`AOS-1 live monitor on http://${HOST}:${PORT}  (read-only; ${FILE})`));
 setInterval(notifyTick, 2000).unref();
 const shutdown = () => { server.close(); setTimeout(() => process.exit(0), 200).unref(); };

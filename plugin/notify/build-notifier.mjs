@@ -81,6 +81,7 @@ export function build({ force = false, dir = dataDir() } = {}) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  if (process.platform !== 'darwin') { console.log('notifier skipped: the branded notifier is macOS-only'); process.exit(0); }
   const r = build({ force: process.argv.includes('--force') });
   console.log(r.rebuilt ? `built ${r.app}` : `up to date: ${r.app}`);
 }

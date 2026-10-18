@@ -1,7 +1,7 @@
 {
   "name": "aos-local",
   "owner": {
-    "name": "tom"
+    "name": "Tom Mitchell"
   },
   "description": "Local marketplace for the AOS dashboard plugin.",
   "plugins": [

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // AOS-1 live monitor hook: appends one compact, sanitized line per Claude Code hook event.
-// Never stores prompts, commands, file contents, tool output or env values. Never throws; always exits 0.
+// Never stores prompts, command lines (only a Bash command's first word), file contents, tool output, error messages or env values.
+// Never throws; always exits 0.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const STOP_ERRORS = new Set(['rate_limit', 'overloaded', 'authentication_failed', 'oauth_org_not_allowed', 'account_on_hold', 'billing_error', 'invalid_request', 'model_not_found', 'server_error', 'max_output_tokens', 'cloud_credential_error', 'unknown']);
-const clean = (v, n = 80) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, n);
+const clean = (v, n = 80) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]+/g, ' ').trim().slice(0, n); // C0/C1 controls, bidi overrides
 const redact = (s) => s.replace(/\b(sk|pk|ghp|gho|xox[a-z]|AKIA|eyJ)[A-Za-z0-9_\-]{8,}/g, '[redacted]')
   .replace(/\b[A-Za-z0-9+\/_\-]{32,}\b/g, '[redacted]');
 
@@ -69,10 +70,10 @@ function main() {
 
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const dir = process.env.AOS_LIVE_DIR || path.join(root, 'live');
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = path.join(dir, 'hook-events.ndjson');
   try { if (fs.statSync(file).size > MAX_BYTES) fs.renameSync(file, path.join(dir, 'hook-events.1.ndjson')); } catch {}
-  fs.appendFileSync(file, JSON.stringify(rec) + '\n');
+  fs.appendFileSync(file, JSON.stringify(rec) + '\n', { mode: 0o600 }); // owner-only when created
 }
 try { main(); } catch {}
 process.exit(0);

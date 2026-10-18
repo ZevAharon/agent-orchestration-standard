@@ -57,7 +57,7 @@ function link() {
   const src = path.join(REPO, 'plugin', 'bin', 'aos-dash'), dst = path.join(BIN, 'aos-dash');
   if (!fs.existsSync(src)) { bad(`missing ${src} (run: make build)`); process.exit(1); }
   fs.mkdirSync(BIN, { recursive: true });
-  try { fs.unlinkSync(dst); } catch {}
+  try { if (!fs.lstatSync(dst).isSymbolicLink()) { bad(`${dst} exists and is not a symlink: left alone`); process.exit(1); } fs.unlinkSync(dst); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   fs.symlinkSync(src, dst); ok(`linked ${dst} -> ${src}`);
   if (!(process.env.PATH || '').split(':').includes(BIN)) warn(`${BIN} is not on your PATH: add it to your shell profile`);
 }

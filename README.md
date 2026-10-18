@@ -49,9 +49,9 @@ flowchart LR
 
 ## Highlights
 
-- Privacy-first local telemetry: hooks log event and tool names, counts and short labels only, never prompts, commands, file contents or tool output.
-- Project-graph layout (heart, project hubs, agents) with node and label overlaps ruled out by construction and covered by automated geometry tests.
-- Canvas particle streams (thousands of particles, adaptive to frame time, crisp on high-DPI screens), checked in WebKit and Chromium and used daily in Safari.
+- Privacy-first local telemetry: hooks log event and tool names, counts and short labels only, never prompts, command lines, file contents, tool output or error messages.
+- Project-graph layout (heart, project hubs, agents) with node and label overlaps ruled out by construction; the terminal layout's no-overlap rules are covered by automated tests.
+- Canvas particle streams (adaptive to frame time, paused in background tabs, crisp on high-DPI screens), tried in Safari and Chromium.
 - Per-model stuck thresholds, plus errored-agent and file-conflict detection.
 - Pan and zoom (wheel, trackpad, pinch, drag, keyboard) with the particle streams staying aligned to the graph.
 - Replay: scrub the recorded timeline and see the graph as it was.
@@ -77,6 +77,7 @@ The validator exits 0 when the state conforms and 1 when it does not. Each viola
 ```
 SPEC.md                 AOS-1 normative specification
 README.md               this file
+ROADMAP.md              what exists, known limitations, ideas
 server.mjs              reference HTTP server (serves ui/ and the state API)
 ui/                     dashboard (goal, heartbeat, task board, agents, events, pause/resume/cancel)
 heartbeat/              heartbeat runner and config.json
@@ -86,7 +87,6 @@ state/                  runtime state (the file-based binding)
   agents.json             Agent[]
   heartbeat.json          Heartbeat
   events.ndjson           append-only Events, one JSON object per line
-artifacts/              Task outputs
 schemas/                JSON Schema (draft 2020-12): goal, task, agent, heartbeat, event
 conformance/
   validate.mjs            validator with a built-in schema-subset checker
@@ -155,7 +155,7 @@ Use the same pattern, with a different label and the heartbeat entry point, for 
 
 ## Claude Code live dashboard (plugin)
 
-Beyond the spec and the reference runner, this repo contains a read-only **live monitor for Claude Code sessions**: it shows every session, project and subagent as a graph (heart -> project hubs -> agents) with live streams, per-agent model, tokens, run time, tool feed, file conflicts, errors and alerts. It is local-only (binds 127.0.0.1) and stores only event and tool names, short labels, counts, and the local folder/file paths it needs for project grouping and file-conflict detection: never prompts, commands, file contents, tool output or error messages. Full paths stay in the local log and are never shown in the dashboard, terminal view or MCP output (see `plugin/README.md` for the exact list).
+Beyond the spec and the reference runner, this repo contains a read-only **live monitor for Claude Code sessions**: it shows every session, project and subagent as a graph (heart -> project hubs -> agents) with live streams, per-agent model, tokens, run time, tool feed, file conflicts, errors and alerts. It is local-only (binds 127.0.0.1) and stores only event and tool names, short labels, counts, and the local folder/file paths it needs for project grouping and file-conflict detection: never prompts, command lines (only a Bash command's first word), file contents, tool output or error messages. Full paths stay in the local log and are never shown in the dashboard, terminal view or MCP output (see `plugin/README.md` for the exact list).
 
 | Part | Where | What |
 |---|---|---|
@@ -176,3 +176,18 @@ make                # lists every target (test, build, start/stop, statusline, u
 ```
 
 Then open http://127.0.0.1:4318 (the monitor starts automatically with a session; set `AOS_NO_AUTOSTART=1` to disable). New sessions pick up the hooks; existing ones need `/reload-plugins`. Project grouping, alerts and the stuck/errored rules can be tuned in the monitor's `live/config.json` (see `plugin/README.md`). Status: personal project, macOS-first. Licensed under the [MIT License](LICENSE).
+
+## Debugging
+
+Open http://127.0.0.1:4318/?debug=1 to show a small on-screen recorder (`ui/debug.js`) that logs layout, canvas, visibility and frame-rate changes with Copy/Clear buttons. It is inert without the flag and never changes the page.
+
+## Security
+
+- **Threat model.** The monitor is a local, read-only observer. It binds `127.0.0.1` only, rejects requests whose `Host` or `Origin` is not `localhost`/`127.0.0.1` (DNS-rebinding and cross-site protection), sends no CORS headers, has no write endpoints, and serves only the files under `ui/` (dotfiles, traversal and symlinks out of `ui/` are refused). Anyone who can run code as your user can read the log anyway; the design goal is that nothing leaves the machine and no other site or user can reach it.
+- **What is stored.** See the exact field list under Privacy in [plugin/README.md](plugin/README.md). Agent names and task labels come from Claude Code tool calls, so the UI and terminal view treat them as untrusted text (never rendered as HTML or terminal escape codes). New log files are created owner-only (`0600`, directory `0700`).
+- **How to erase.** Delete the data folder: `~/.claude/plugins/data/aos-dashboard-aos-local/live` (or your `AOS_LIVE_DIR`); `make uninstall` removes the plugin but keeps the data.
+- **Reporting.** Please open a GitHub issue. For anything sensitive, open an issue asking for a private contact rather than posting details.
+
+## Contributing
+
+Issues and small pull requests are welcome. Edit the sources in the repo root (`monitor.mjs`, `hooks/`, `ui/`, `cli/`), then run `make build` (regenerates the `plugin/` copies) and `make test`; keep it zero-dependency and Node 18 compatible.

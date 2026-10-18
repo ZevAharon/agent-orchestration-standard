@@ -6,8 +6,8 @@
 //   ../hooks/aos-hook.mjs    -> hooks/aos-hook.mjs    (patched: data dir)
 //   ../ui/                   -> ui/
 //   ../cli/                  -> cli/                  (only if present)
-//   ../live/config.json      -> defaults/config.json
-//   ../live/prices.json      -> defaults/prices.json  (prices set to null)
+// plugin/defaults/ (seeded config.json / prices.json) is tracked source and is not generated: live/ holds personal
+// runtime data and is never copied into the plugin.
 // plugin/mcp/ and the plugin's own manifests/hooks/skills are not touched.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -107,18 +107,6 @@ function build() {
   if (fs.existsSync(cliSrc) && fs.statSync(cliSrc).isDirectory()) syncDir(cliSrc, 'cli');
   else console.log('note: ../cli not present; plugin/cli not copied');
 
-  // Defaults for the data dir (prices blanked so no estimate is invented).
-  const cfgText = fs.readFileSync(path.join(REPO, 'live', 'config.json'), 'utf8');
-  record('defaults/config.json', Buffer.byteLength(cfgText), put('defaults/config.json', cfgText));
-
-  const prices = JSON.parse(fs.readFileSync(path.join(REPO, 'live', 'prices.json'), 'utf8'));
-  const blank = {};
-  for (const [model, v] of Object.entries(prices)) {
-    if (model.startsWith('_')) { blank[model] = v; continue; }
-    blank[model] = Object.fromEntries(Object.keys(v).map((k) => [k, null]));
-  }
-  const pricesText = JSON.stringify(blank, null, 2) + '\n';
-  record('defaults/prices.json', Buffer.byteLength(pricesText), put('defaults/prices.json', pricesText));
 }
 
 function validate() {

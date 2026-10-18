@@ -44,17 +44,17 @@ check:
 	@command -v claude >/dev/null || { echo "claude CLI not found: install Claude Code first"; exit 1; }
 
 build: ## Regenerate plugin/ copies (monitor, hooks, ui, cli) from the sources
-	@node plugin/build.mjs | tail -3
+	@set -o pipefail; node plugin/build.mjs | tail -3
 
 validate: ## Validate the plugin manifest with the Claude CLI
-	@claude plugin validate ./plugin 2>&1 | tail -2
+	@set -o pipefail; claude plugin validate ./plugin 2>&1 | tail -2
 
 test: ## Run every test suite
-	@echo "==> conformance"; node conformance/validate.mjs --selftest | tail -1
-	@echo "==> terminal dashboard"; node cli/test.mjs | tail -1
-	@echo "==> MCP server"; node plugin/mcp/test.mjs | tail -1
-	@echo "==> notifier"; node plugin/notify/test.mjs | tail -1
-	@echo "==> theme contrast"; node ui/theme-tokens.test.mjs | head -1
+	@set -o pipefail; echo "==> conformance"; node conformance/validate.mjs --selftest | tail -1
+	@set -o pipefail; echo "==> terminal dashboard"; node cli/test.mjs | tail -1
+	@set -o pipefail; echo "==> MCP server"; node plugin/mcp/test.mjs | tail -1
+	@set -o pipefail; echo "==> notifier"; node plugin/notify/test.mjs | tail -1
+	@echo "==> theme contrast"; out="$$(node ui/theme-tokens.test.mjs)" || { echo "$$out"; exit 1; }; echo "$$out" | head -1
 
 doctor: ## Check the whole setup and say what to fix
 	@$(AOS) doctor
