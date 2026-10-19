@@ -24,7 +24,7 @@
   var cm = window.matchMedia ? window.matchMedia('(prefers-color-scheme:light)') : null;
   var enabled = !!ctx && !(rm && rm.matches), raf = 0, last = 0, throttled = false, quality = 1;
   var etab = [], eN = 0, fe = {}, fd = {}, M = [1, 0, 0, 1, 0, 0], SC = 1, DPR = Math.min(4, window.devicePixelRatio || 1), geomTick = 0, colKey = '';
-  var col = null, slots = [], light = false, spriteDpr = 0;
+  var KS = 1, col = null, slots = [], light = false, spriteDpr = 0;
   var lastSeq = null, lastEv = null, lastGoal = null, evRate = 0, celebrated = 0, T = { t: 0, sm: 1, now: 0 };
   var tmp = { x: 0, y: 0 }, live = { l: 'dead' }, liveT = 0, emitAcc = 0;
   var warm = 0, cbuf = new Float32Array(90), cpos = 0, cfill = 0, p95 = 0, gTick = 0, lastCost = 0;
@@ -157,12 +157,12 @@
     if (!force && sig === r.sig && rk === r.rk) return;
     var g = sample(r.el); r.sig = sig; r.rk = rk; if (!g) return;
     var oldR = r.s1 - r.s0, s0, s1;
-    if (r.dep) { s0 = 0; s1 = g.len; r.W = 9; }
+    if (r.dep) { s0 = 0; s1 = g.len; r.W = 9 * KS; }
     else {
       var ex;
       if (RAD.a > 0) ex = RAD.a + 3;
       else { var dx = Math.abs(g.pts[g.N * 2] - g.pts[0]) / g.len, dy = Math.abs(g.pts[g.N * 2 + 1] - g.pts[1]) / g.len; ex = Math.min(dx > 1e-3 ? (LM.cw / 2) / dx : 1e9, dy > 1e-3 ? (LM.ch / 2) / dy : 1e9) + 2; }
-      s0 = Math.min(RAD.o + 3, g.len * 0.35); s1 = Math.max(s0 + 12, g.len - ex); r.W = Math.min(30, g.len * 0.1);
+      s0 = Math.min(RAD.o + 3, g.len * 0.35); s1 = Math.max(s0 + 12, g.len - ex); r.W = Math.min(30, g.len * 0.1) * KS;
     }
     r.g = g; r.s0 = s0; r.s1 = s1; r.rs = RAD.o; r.rt = RAD.a || 12;
     if (!r.dep) { OX = g.pts[0]; OY = g.pts[1]; r.sx = OX; r.sy = OY; r.tx = g.pts[g.N * 2]; r.ty = g.pts[g.N * 2 + 1]; }
@@ -209,7 +209,7 @@
     r.s0 = s0; r.s1 = s1; r.sx = x1; r.sy = y1; r.tx = x2; r.ty = y2; r.rs = r1; r.rt = r2;
     queueRemap(r, oldR, s1 - s0, flip);
   }
-  function setW(r) { if (r.nm) { var a = Math.min(8, r.act); r.W = Math.min(30, r.g ? r.g.len * 0.1 : 10) * (r.kind === 'trunk' ? 1 + 0.06 * a : 1); } }
+  function setW(r) { if (r.nm) { var a = Math.min(8, r.act); r.W = KS * Math.min(30, r.g ? r.g.len * 0.1 : 10) * (r.kind === 'trunk' ? 1 + 0.06 * a : 1); } }
 
   /* ---------- node grid: every node (centre + radius, SVG units) so free and lane particles never draw on/inside any node ---------- */
   var GN = 0, GX = new Float32Array(128), GY = new Float32Array(128), GR = new Float32Array(128);
@@ -277,7 +277,7 @@
     if (data.graph && data.graph !== graph) graph = data.graph;
     var edges = data.edges || [], deps = data.deps || [], i, nm = false;
     for (i = 0; i < edges.length; i++) if (edges[i].x1 !== undefined) { nm = true; break; }
-    nmMode = nm; CX = data.cx; CY = data.cy;
+    nmMode = nm; CX = data.cx; CY = data.cy; KS = data.k > 0 && data.k <= 1 ? data.k : 1;
     refreshGeom();
     if (!nm) RAD = { o: nodeR('.orch .body, .orch .core-bg', 66), a: nodeR('.agent .card, .agent .av', 0) };
     else {
@@ -447,7 +447,7 @@
         continue;
       }
       var e = etab[P_e[i]]; if (!e || !e.g || (e.dead && T.t - e.dt0 > 0.55)) { kill(i); continue; }
-      var R = e.s1 - e.s0, sp = P_speed[i] * T_sm;
+      var R = e.s1 - e.s0, sp = P_speed[i] * T_sm * KS;
       if (P_kind[i] === KE) { sp *= Math.max(0.04, 1 - (P_age[i] / P_life[i]) * 1.15); if (P_age[i] > P_life[i]) { kill(i); continue; } }
       P_u[i] += sp * dt;
       if (P_u[i] >= R) {

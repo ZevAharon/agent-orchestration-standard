@@ -86,6 +86,9 @@
   }
   function pill(status) { return el('span', 'pill s-' + status, human(status)); }
   function setPos(e, x, y) { var v = 'translate(' + (Math.round(x * 100) / 100) + ' ' + (Math.round(y * 100) / 100) + ')'; if (e._tf !== v) { e._tf = v; e.setAttribute('transform', v); } }
+  /* semantic zoom: node groups are counter-scaled by KN = min(1, 1/z) about their centre, so glyphs and labels keep their z=1 screen size when zoomed in */
+  function kNode() { var z = WD.w / VW.w; return z > 1 ? 1 / z : 1; }
+  function setNode(e, x, y, k) { var v = 'translate(' + (Math.round(x * 100) / 100) + ' ' + (Math.round(y * 100) / 100) + ')' + (k < 1 ? ' scale(' + (Math.round(k * 100000) / 100000) + ')' : ''); if (e._tf !== v) { e._tf = v; e.setAttribute('transform', v); } }
   function setA(e, k, v) { var c = e._a || (e._a = {}); v = String(v); if (c[k] !== v) { c[k] = v; e.setAttribute(k, v); } }
   function keyAct(fn) { return function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } }; }
   function isLive() { return !!(state && state.mode === 'live'); }
@@ -774,7 +777,7 @@
     var tx = g.querySelectorAll('text'), live = isLive();
     var l = hb ? dispLive(lv.l) : (live ? 'standby' : 'dead'), oname = live ? 'Claude Code' : 'Orchestrator';
     var sess = live ? mainSessions() : [];
-    if (H) setPos(g, H.dx, H.dy); else setPos(g, WD.hx, WD.hy);
+    if (H) setNode(g, H.dx, H.dy, kNode()); else setNode(g, WD.hx, WD.hy, kNode());
     setA(g.querySelector('.halo'), 'r', Rc + 22);
     setA(g.querySelector('.core-bg'), 'r', Rc);
     setA(g.querySelector('.tint'), 'r', Math.round(Rc * 0.36));
@@ -967,17 +970,18 @@
     var W = L.chipW, sd = n.side, m = n.m, V = m.V, x0 = sd === 'r' ? n.lo + 2 : sd === 'l' ? -(n.lo + 2) : 0;
     var top = n.ty;
     var cx = sd === 'r' ? n.dx + x0 : sd === 'l' ? n.dx + x0 - W : n.dx - W / 2, cy = n.dy + top + m.lines.length * LH.n * V.fs + (V.sub ? LH.s : 0) + (m.hasM ? LH.m : 0) + 2;
-    setPos(c, cx, cy);
+    var KC = kNode(), ccy = n.dy + KC * (cy - n.dy); setNode(c, n.dx + KC * (cx - n.dx), ccy, KC); cy = ccy;
     var ctt = c.querySelector('text.t'); setA(ctt, 'x', sd === 'r' ? 0 : sd === 'l' ? W : W / 2); var an = sd === 'r' ? 'start' : sd === 'l' ? 'end' : 'middle'; if (ctt.style.textAnchor !== an) ctt.style.textAnchor = an;
-    chipPos[n.ct.t.id] = { x: n.dx, y: cy + LH.c / 2 };
+    chipPos[n.ct.t.id] = { x: n.dx, y: cy + KC * LH.c / 2 };
   }
   /* write displayed geometry to the DOM (cached setters: an unchanged frame writes nothing) */
   function writeDom() {
     var chipPos = {}, H = N[HEART];
-    if (orchEl && H) setPos(orchEl, H.dx, H.dy);
+    var KN = kNode();
+    if (orchEl && H) setNode(orchEl, H.dx, H.dy, KN);
     NL.forEach(function (n) {
       if (n.kind === 'heart') return;
-      setPos(n.el, n.dx, n.dy); applyLabel(n);
+      setNode(n.el, n.dx, n.dy, KN); applyLabel(n);
       var e = edges[n.id], p = N[n.parent];
       if (e && p) { setA(e.el, 'x1', r2(p.dx)); setA(e.el, 'y1', r2(p.dy)); setA(e.el, 'x2', r2(n.dx)); setA(e.el, 'y2', r2(n.dy)); }
       if (n.kind === 'agent') chipPlace(n, chipPos);
@@ -1087,6 +1091,8 @@
     if (hard || vb !== vbLast) { vbLast = vb; svg.setAttribute('viewBox', vb); }
     var zoomed = Math.abs(VW.w - WD.w) > 0.01 || Math.abs(VW.x) > 0.01 || Math.abs(VW.y) > 0.01;
     svg.classList.toggle('zoomed', zoomed); svg.classList.toggle('zlow', z < 0.6);
+    var kz = z > 1 ? Math.round(10000 / z) / 10000 : 1;
+    if (svg._kz !== kz) { svg._kz = kz; svg.style.setProperty('--kz', kz); if (NL.length) writeDom(); }
     if (zoomUi) {
       zoomUi.pct.textContent = Math.round(z * 100) + '%';
       zoomUi.out.disabled = z <= ZMIN + 1e-6; zoomUi.in.disabled = z >= ZMAX - 1e-6; zoomUi.fit.disabled = !zoomed;
@@ -1182,6 +1188,7 @@
     $('stage').appendChild(box);
     zoomUi = { out: out, in: inn, fit: fit, pct: pct }; paintView(false);
   })();
+  window.__aosZoomTo = function (z) { var r = $('graph').getBoundingClientRect(); zoomAt(z, r.left + r.width / 2, r.top + r.height / 2); return WD.w / VW.w; };
   /* ---------- hover / focus tooltip: fixed-position, pointer-events none, no layout effect ---------- */
   var tipEl = null, tipT = 0, tipFor = null;
   function hideTip() { clearTimeout(tipT); tipT = 0; tipFor = null; if (tipEl) tipEl.classList.remove('show'); }
@@ -1692,21 +1699,21 @@
   /* hand the graph to particles.js: endpoints in SVG user units, heart/hub as endpoint 1. Called every frame while anything moves. */
   function fxSync() {
     if (!window.AosFx || !state) return;
-    var ed = [], nd = [], dp = [], H = N[HEART];
+    var ed = [], nd = [], dp = [], H = N[HEART], KN = kNode();
     NL.forEach(function (n) {
-      nd.push({ id: n.id, x: n.dx, y: n.dy, r: n.R || 0 });
+      nd.push({ id: n.id, x: n.dx, y: n.dy, r: (n.R || 0) * KN });
       if (n.kind === 'heart') return;
       var p = N[n.parent], e = edges[n.id]; if (!p || !e) return;
       if (n.kind === 'hub') {
         var hs = hubStatus(n.p.agents);
-        ed.push({ id: 'T:' + n.id, el: e.el, kind: 'trunk', x1: p.dx, y1: p.dy, x2: n.dx, y2: n.dy, r1: p.R, r2: n.R, status: hs.st, activity: hs.running + 0.5 * hs.stalled });
+        ed.push({ id: 'T:' + n.id, el: e.el, kind: 'trunk', x1: p.dx, y1: p.dy, x2: n.dx, y2: n.dy, r1: p.R * KN, r2: n.R * KN, status: hs.st, activity: hs.running + 0.5 * hs.stalled });
       } else {
         var st = n.a.status || 'idle';
-        ed.push({ id: 'B:' + n.id, el: e.el, kind: 'branch', x1: p.dx, y1: p.dy, x2: n.dx, y2: n.dy, r1: p.R, r2: n.R, status: st, activity: st === 'running' ? 1 : 0, agent: n.id });
+        ed.push({ id: 'B:' + n.id, el: e.el, kind: 'branch', x1: p.dx, y1: p.dy, x2: n.dx, y2: n.dy, r1: p.R * KN, r2: n.R * KN, status: st, activity: st === 'running' ? 1 : 0, agent: n.id });
       }
     });
     Object.keys(deps).forEach(function (k) { dp.push({ id: k, el: deps[k], status: depInfo[k] || '' }); });
-    AosFx.sync({ state: state, edges: ed, nodes: nd, deps: dp, cx: H ? H.dx : WD.hx, cy: H ? H.dy : WD.hy, mobile: !!L.mobile, cw: L.cw, ch: L.ch, graph: $('graph') });
+    AosFx.sync({ state: state, edges: ed, nodes: nd, deps: dp, cx: H ? H.dx : WD.hx, cy: H ? H.dy : WD.hy, mobile: !!L.mobile, cw: L.cw, ch: L.ch, k: KN, graph: $('graph') });
     if (AosFx.invalidate) AosFx.invalidate();
   }
   window.__aosGraph = function () { return { fit: WD.fit, lvl: LVL, s: WD.s, w: WD.w, h: WD.h, runs: layoutRuns, frames: 0, sleeping: true, view: { x: VW.x, y: VW.y, w: VW.w, h: VW.h, z: WD.w / VW.w }, bad: violations(), sig: SIG, why: (function () { DBG = []; relax(0.6, true); var d = DBG; DBG = null; return d; })(),

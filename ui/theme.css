@@ -577,3 +577,9 @@ table.ev{font-size:13px}
 .zoom-ctl button:disabled{opacity:.38;cursor:default}
 .zoom-pct{min-width:4.4ch;text-align:center;font-variant-numeric:tabular-nums;font-size:11px;letter-spacing:.06em}
 @media (max-width:720px){#graph{touch-action:pan-y}#graph.zoomed{touch-action:none}.zoom-ctl{right:14px;top:auto;bottom:34px}body.aos-replay-open .zoom-ctl{bottom:58px}}
+
+/* semantic zoom: strokes drawn outside node groups keep their z=1 screen width (--kz = min(1,1/z)) */
+.edge{transition:none;stroke-width:calc(.8px*var(--kz,1))}
+.edge.run{stroke-width:calc(1px*var(--kz,1))}
+.dep{stroke-width:calc(1px*var(--kz,1))}
+.orbit{stroke-width:calc(1px*var(--kz,1))}
