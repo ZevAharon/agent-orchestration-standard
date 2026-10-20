@@ -47,6 +47,7 @@ The GOALS button and the "Needs you" badge stay hidden until a goal exists or th
 - [docs/dashboard.md](docs/dashboard.md): the Claude Code dashboard, highlights, debugging, security and threat model
 - [docs/architecture.md](docs/architecture.md): how events flow from hooks to the UI
 - [docs/screenshots.md](docs/screenshots.md): screenshot gallery
+- [docs/cross-machine.md](docs/cross-machine.md): opt-in, read-only view of agents and usage across several machines over your existing SSH access (no new ports)
 - [docs/overhead.md](docs/overhead.md): measured monitor CPU and memory
 - [docs/orch-state-contract.md](docs/orch-state-contract.md): the on-disk layout the dashboard reads from an orchestrator
 - [plugin/README.md](plugin/README.md): plugin details and the exact privacy field list

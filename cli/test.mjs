@@ -367,4 +367,18 @@ assert.equal(cleanup({ write: (s) => w.push(s) }, fakeStdin), false, 'idempotent
   assert.equal(pathHint({ PATH: '/usr/bin' }, '/h'), '/h/.local/bin is not on your PATH. Add this line to your shell profile (~/.zshrc or ~/.bashrc):\n  export PATH="$HOME/.local/bin:$PATH"');
   assert.equal(pathHint({ PATH: '/x:/h/.local/bin' }, '/h'), '');
 }
+// ---- cross-machine: --machine filter, machines summary line, namespaced ids
+{
+  const { filterMachine, machinesLine } = await import('./dash.mjs');
+  const f = fixture(2); f.agents[0].machine = 'local'; f.agents[1].machine = 'laptop2'; f.agents[1].id = 'laptop2:Claude Code·ab12';
+  f.machines = [{ name: 'local', ok: true, totals: { agents: 1, tokens: 1500 } }, { name: 'laptop2', ok: true, totals: { agents: 1, tokens: 2500 } }, { name: 'dead', ok: false, error: 'timed out', totals: { agents: 0, tokens: 0 } }];
+  assert.match(machinesLine(f), /^machines: local ● 1 agents 1\.5k tok · laptop2 ● 1 agents 2\.5k tok · dead ○ offline \(timed out\)$/);
+  assert.equal(machinesLine(fixture(1)), '');
+  assert.deepEqual(filterMachine(f, 'laptop2').agents.map((a) => a.machine), ['laptop2']);
+  const all = renderModel(f, 140, 30, { list: true }).plain.join('\n'), one = renderModel(f, 140, 30, { list: true, machine: 'laptop2' }).plain.join('\n');
+  assert.ok(all.includes('machines: local') && all.includes('dead ○ offline'), 'machines summary line in header');
+  assert.ok(one.includes('1 agents'), 'filtered to one agent: ' + one.split('\n')[0]);
+  assert.ok(isMainViaRender(f), 'namespaced remote Claude Code session still recognised as a main session');
+}
+function isMainViaRender(f) { return !renderModel(f, 140, 30, { list: true }).plain.join('\n').includes('laptop2:'); }
 console.log(`ok (${ringCases} ring cases, ${listCases} list fallbacks)`);

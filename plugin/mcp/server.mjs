@@ -110,9 +110,16 @@ function conflictsOf(s) {
   if (c && typeof c === 'object') return Object.entries(c).map(([k, v]) => ({ file: k, agents: v }));
   return [];
 }
-function summarize(s, includeEvents = 0, project = null) {
-  const projs = projectsOf(s);
+const machinesOf = (s) => tools_(s.machines).filter((m) => m && typeof m === 'object' && typeof m.name === 'string');
+const machLine = (m) => `${trunc(m.name, 32)} ${m.ok ? 'ok' : 'OFFLINE' + (m.error ? ' (' + trunc(String(m.error), 80) + ')' : '')}` + (m.totals ? ` ${num(m.totals.agents)} agents, ${num(m.totals.running)} running, ${fmt(num(m.totals.tokens))} tok` + (hasNum(m.totals.cost_usd_est) ? `, ~$${m.totals.cost_usd_est.toFixed(2)}` : '') : '');
+function summarize(s, includeEvents = 0, project = null, machine = null) {
+  const projs = projectsOf(s), machs = machinesOf(s);
   let agents = tools_(s.agents); const tasks = tools_(s.tasks);
+  if (machine != null) {
+    const q = String(machine).toLowerCase(), hit = machs.find((m) => m.name.toLowerCase() === q);
+    if (!hit) throw new ToolError(`No machine ${JSON.stringify(machine)}. Known: ${machs.map((m) => m.name).join(', ') || 'none (this monitor does not report machines)'}`);
+    agents = agents.filter((a) => String(a.machine ?? 'local').toLowerCase() === q);
+  }
   if (project != null) {
     const q = String(project).toLowerCase();
     const hit = projs.filter((p) => String(p.id).toLowerCase() === q || String(p.name).toLowerCase() === q);
@@ -127,10 +134,11 @@ function summarize(s, includeEvents = 0, project = null) {
   L.push(`mode: ${s.mode ?? '?'} | server_time: ${s.server_time ?? '?'}` + (s.goal ? ` | goal: ${trunc(typeof s.goal === 'string' ? s.goal : JSON.stringify(s.goal), 200)}` : ''));
   L.push(`agents: ${agents.length} (running ${counts.running}, idle ${counts.idle}, stalled ${counts.stalled}) | stuck: ${agents.filter((a) => a.stuck).length} | tasks: ${tasks.length}`);
   L.push(`tokens: new ${fmt(t.new)} (in ${fmt(t.input)}, out ${fmt(t.output)}, cache_write ${fmt(t.cache_write)}) vs cache_read ${fmt(t.cache_read)}` + (t.usdKnown ? ` | usd_est ~$${t.usd.toFixed(4)}` : ''));
+  if (machs.length > 1) L.push(`machines: ${machs.length} | ${machs.map(machLine).join('; ')}`);
   const conf = conflictsOf(s);
   L.push(`conflicts: ${conf.length}`);
   if (projs.length) {
-    const shown = project != null ? projs.filter((p) => agents.some((a) => tools_(p.agents).includes(a.id) || a.project_id === p.id)) : projs;
+    const shown = project != null || machine != null ? projs.filter((p) => agents.some((a) => tools_(p.agents).includes(a.id) || a.project_id === p.id)) : projs;
     L.push(`projects: ${shown.length}` + (shown.length ? ' | ' + shown.map((p) => projLine(p, agents.filter((a) => tools_(p.agents).includes(a.id) || a.project_id === p.id))).join('; ') : ''));
     const done = new Set();
     for (const p of shown) {
@@ -157,11 +165,11 @@ const obj = (properties = {}, required = []) => ({ type: 'object', properties, r
 const TOOLS = [
   {
     name: 'aos_status',
-    description: 'Compact summary of the live AOS monitor: projects summary, then agents grouped by project (id, role, status, model, current tool, stuck), counts, new tokens vs cache reads, conflicts, newest alerts. Optional project filter.',
-    inputSchema: obj({ project: { type: 'string', minLength: 1, maxLength: 200, description: 'Only this project (name or id, as in the projects line).' }, include_events: { type: 'integer', minimum: 0, maximum: 50, description: 'Also include the newest N raw events (max 50). Default 0.' } }),
+    description: 'Compact summary of the live AOS monitor: projects summary, then agents grouped by project (id, role, status, model, current tool, stuck), counts, new tokens vs cache reads, conflicts, newest alerts. Optional project and machine filters; with several machines, a machines line gives per-machine status and totals.',
+    inputSchema: obj({ machine: { type: 'string', minLength: 1, maxLength: 64, description: 'Only this machine (cross-machine setups; see the machines line).' }, project: { type: 'string', minLength: 1, maxLength: 200, description: 'Only this project (name or id, as in the projects line).' }, include_events: { type: 'integer', minimum: 0, maximum: 50, description: 'Also include the newest N raw events (max 50). Default 0.' } }),
     async run(a) {
       const s = await api('/api/state');
-      return summarize(s, clampInt(a.include_events, 0, 50, 0), a.project ?? null);
+      return summarize(s, clampInt(a.include_events, 0, 50, 0), a.project ?? null, a.machine ?? null);
     },
   },
   {
@@ -177,6 +185,7 @@ const TOOLS = [
       const L = [
         agentLine(ag),
         ...(pj ? [`project: ${pj}`] : []),
+        ...(typeof ag.machine === 'string' ? [`machine: ${trunc(ag.machine, 32)}`] : []),
         `timing: started_at ${ag.started_at ?? 'n/a'}, ended_at ${ag.ended_at ?? (ag.started_at != null && ag.status === 'running' ? 'running' : 'n/a')}, ran_s ${hasNum(ag.ran_s) ? ag.ran_s : 'n/a'}, tok_per_min ${hasNum(ag.tok_per_min) ? ag.tok_per_min : 'n/a'}`,
         `usage: input ${fmt(num(u.input))}, output ${fmt(num(u.output))}, cache_write ${fmt(num(u.cache_write))}, cache_read ${fmt(num(u.cache_read))}, usd_est ${u.usd_est == null ? 'n/a' : '$' + u.usd_est}`,
         `current_tool: ${ag.current_tool ? JSON.stringify(ag.current_tool) : 'none'}`,

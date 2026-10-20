@@ -123,7 +123,7 @@
   function isLive() { return !!(state && state.mode === 'live'); }
   /* agent ids look like "Claude Code·912b": name before the middle dot, short id after it */
   function splitId(id) {
-    var s = String(id || ''), i = s.lastIndexOf('·');
+    var s = String(id || ''), i; if (window.AosMachines) s = AosMachines.strip(s); i = s.lastIndexOf('·');
     if (i < 0) return { name: s.replace(/^agent[-_]/, ''), short: '' };
     return { name: s.slice(0, i).trim(), short: s.slice(i + 1).trim() };
   }
@@ -1538,7 +1538,7 @@
       if (a.out_of_scope) { var sb = el('span', 'tag oos-badge', 'out of scope'); sb.title = 'An attempt at this task changed files outside its declared path_scope and was rejected by the orchestrator'; p.appendChild(sb); }
       body.appendChild(p);
       if (a.role) { var rp = el('p', null, a.role); rp.style.overflowWrap = 'anywhere'; body.appendChild(rp); }
-      kv(body, [['Full id', a.id]].concat(a.model_label ? [['Model', a.model_label + (a.model && a.model !== a.model_label ? ' (' + a.model + ')' : '')]] : [], [['Current task', a.current_task || 'none'], ['Can delegate', a.can_delegate ? 'yes' : 'no'], ['Last event', fmtTs(a.last_event_at) || 'n/a']]));
+      kv(body, [['Full id', a.id]].concat(a.machine ? [['Machine', a.machine]] : []).concat(a.model_label ? [['Model', a.model_label + (a.model && a.model !== a.model_label ? ' (' + a.model + ')' : '')]] : [], [['Current task', a.current_task || 'none'], ['Can delegate', a.can_delegate ? 'yes' : 'no'], ['Last event', fmtTs(a.last_event_at) || 'n/a']]));
       toolFeed(body, a);
       if ((a.capabilities || []).length) { section(body, 'Capabilities'); var c = el('div'); a.capabilities.forEach(function (x) { c.appendChild(el('span', 'tag', x)); }); body.appendChild(c); }
       section(body, 'Tasks');
@@ -1621,6 +1621,7 @@
   }
   var liveState = null, override = null, subs = [];
   function applyState(s, fromPoll) {
+    if (window.AosMachines) { try { AosMachines.render(s); s = AosMachines.filter(s); } catch (e0) { if (window.console) console.error(e0); } }
     prev = fromPoll ? state : null; state = s;
       try { render(); diff(); if (fromPoll && window.AosFx) AosFx.onState(state, prev); }
       catch (err) {
@@ -1630,6 +1631,7 @@
   }
   window.AosApp = {
     getState: function () { return state; },
+    refresh: function () { var r = override || liveState; if (r) applyState(r, false); },
     setOverride: function (s) {
       if (s) { override = s; applyState(s, false); }
       else { override = null; if (liveState) applyState(liveState, false); }
