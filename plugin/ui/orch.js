@@ -222,13 +222,34 @@
     R.dot = el('i', 'orch-pdot'); R.dot.hidden = true; R.dot.setAttribute('aria-hidden', 'true'); b.appendChild(R.dot);
     if (theme && theme.parentNode === top) top.insertBefore(b, theme); else top.appendChild(b);
     b.addEventListener('click', function () { if (panelOpen) closePanel(); else openPanel(); });
-    R.hbtn = b; updateHeader();
+    R.hbtn = b;
+    var nb = el('button', 'orch-needs'); nb.type = 'button'; nb.id = 'needs-btn'; nb.hidden = true;
+    nb.setAttribute('aria-haspopup', 'true'); nb.setAttribute('aria-expanded', 'false'); nb.setAttribute('aria-controls', 'needs-pop');
+    R.needsN = el('b', 'tnum', '0'); nb.appendChild(document.createTextNode('Needs you ')); nb.appendChild(R.needsN);
+    top.insertBefore(nb, b); R.needs = nb;
+    var pop = el('div', 'orch-needs-pop'); pop.id = 'needs-pop'; pop.hidden = true; pop.setAttribute('role', 'region'); pop.setAttribute('aria-label', 'Waiting on you'); document.body.appendChild(pop); R.needsPop = pop;
+    nb.addEventListener('click', function (e) { e.stopPropagation(); setNeedsOpen(pop.hidden); });
+    document.addEventListener('click', function (e) { if (!pop.hidden && !pop.contains(e.target)) setNeedsOpen(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !pop.hidden) { setNeedsOpen(false); nb.focus(); } });
+    updateHeader();
+  }
+  function setNeedsOpen(on) { if (!R.needsPop) return; R.needsPop.hidden = !on; R.needs.setAttribute('aria-expanded', String(!!on)); if (on) renderNeeds(); }
+  function renderNeeds() {
+    var nd = window.AOSNeeds.compute(goalList()), pop = R.needsPop; clear(pop);
+    nd.items.forEach(function (it) {
+      var b = el('button', 'orch-needs-it'); b.type = 'button'; b.setAttribute('data-id', it.id); b.setAttribute('data-kind', it.kind);
+      b.appendChild(el('span', 'orch-needs-t', clip(it.title, 80))); b.appendChild(el('span', 'orch-needs-w', it.text));
+      b.addEventListener('click', function () { setNeedsOpen(false); if (!panelOpen) openPanel(); goDetail(it.id); });
+      pop.appendChild(b);
+    });
   }
   function updateHeader() {
     if (!R.hbtn) return;
     var n = activeCount(), p = pendingCount();
     R.n.textContent = n + ' active'; R.dot.hidden = p <= 0;
     R.hbtn.setAttribute('aria-label', 'Goals: ' + n + ' active' + (p > 0 ? ', ' + p + ' approval' + (p === 1 ? '' : 's') + ' pending' : '') + (panelOpen ? '. Close goals panel' : '. Open goals panel'));
+    var nd = window.AOSNeeds ? window.AOSNeeds.compute(goalList()) : { total: 0 };
+    if (R.needs) { R.needs.hidden = nd.total <= 0; R.needsN.textContent = String(nd.total); R.needs.setAttribute('aria-label', 'Needs you: ' + nd.total + (nd.total === 1 ? ' item' : ' items') + ' waiting on you'); if (nd.total <= 0) setNeedsOpen(false); else if (!R.needsPop.hidden) renderNeeds(); }
     R.hbtn.classList.toggle('on', panelOpen); R.hbtn.setAttribute('aria-expanded', String(panelOpen));
   }
 
