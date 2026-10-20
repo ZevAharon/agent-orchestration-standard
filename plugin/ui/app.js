@@ -27,6 +27,36 @@
   });
   window.AosTheme = { get: cur, set: set, cycle: cycle };
 })();
+/* streams toggle (STREAMS: FULL -> QUIET -> LINES): QUIET stops idle-edge particles; LINES draws static status-coded lines only (no particles, no waves, idle loop). */
+/*streams:begin*/
+(function () {
+  var KEY = 'aos.streams', btn = document.getElementById('streams-btn'), ORDER = ['full', 'quiet', 'lines'], NAME = { full: 'Full', quiet: 'Quiet', lines: 'Lines' }, s = 'full';
+  try { var v0 = localStorage.getItem(KEY); if (ORDER.indexOf(v0) >= 0) s = v0; } catch (e) {}
+  function paint() {
+    if (!btn) return; var n = ORDER[(ORDER.indexOf(s) + 1) % 3];
+    btn.setAttribute('data-state', s); btn.querySelector('.theme-l').textContent = 'Streams: ' + NAME[s];
+    btn.setAttribute('aria-label', 'Particle streams: ' + s + '. Switch to ' + n);
+    btn.title = 'Particle streams: ' + s + '. Click or press Q to switch to ' + n;
+  }
+  function apply() { try { if (window.AosFx) { if (AosFx.setMode) AosFx.setMode(s); else if (AosFx.setQuiet) AosFx.setQuiet(s === 'quiet'); } } catch (e) {} }
+  function set(v) {
+    s = v === true ? 'quiet' : ORDER.indexOf(v) >= 0 ? v : 'full';
+    try { if (s !== 'full') localStorage.setItem(KEY, s); else localStorage.removeItem(KEY); } catch (e) {}
+    paint(); apply();
+  }
+  function toggle() { set(ORDER[(ORDER.indexOf(s) + 1) % 3]); }
+  paint(); apply();
+  document.addEventListener('DOMContentLoaded', apply);
+  if (btn) btn.addEventListener('click', toggle);
+  document.addEventListener('keydown', function (e) {
+    if ((e.key !== 'q' && e.key !== 'Q') || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    var el = e.target, tag = el && el.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (el && el.isContentEditable)) return;
+    toggle();
+  });
+  window.AosStreams = { get: function () { return s; }, set: set, toggle: toggle };
+})();
+/*streams:end*/
 (function () {
   var POLL_MS = 2000, NS = 'http://www.w3.org/2000/svg', CX = 500, CY = 300, GW = 1000, GH = 600;
   var TSTAT = ['running', 'needs_review', 'stalled', 'ready', 'pending', 'failed', 'done', 'cancelled'];

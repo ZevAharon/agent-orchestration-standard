@@ -5,7 +5,7 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var graph = $('graph'); if (!graph || !document.createElement('canvas').getContext) return;
-  var nmMode = false, am = {}, dying = [], gsA = 1, gsI = 1, capNext = null;
+  var quiet = false, mode = 'full', lastLines = 0, lineSty = {}, nmMode = false, am = {}, dying = [], gsA = 1, gsI = 1, capNext = null;
   var state = null, prev = null, CX = 500, CY = 300, OX = 500, OY = 300, dirty = false, RAD = { o: 66, a: 0 }, scaleBy = [], anyScale = false, LM = { mobile: false, cw: 24, ch: 24 };
   var POOL = 13000;
   var P_on = new Uint8Array(POOL), P_free = new Uint8Array(POOL), P_kind = new Uint8Array(POOL), P_dir = new Int8Array(POOL), P_arr = new Uint8Array(POOL), P_slot = new Uint8Array(POOL);
@@ -69,7 +69,7 @@
     };
     var key = JSON.stringify(n) + light;
     if (key === colKey) return; colKey = key; col = n;
-    buildSprites();
+    buildSprites(); if (mode === 'lines') kick();
   }
 
   /* ---------- geometry ---------- */
@@ -354,7 +354,7 @@
     if (st === 'running') { var f = Math.pow(a, 0.75); o[0] = 420 * f; o[1] = 230 * f; o[2] = 130; r.k = 'run'; r.br = 0.85 + 0.15 * Math.sqrt(a); }
     else if (st === 'errored') { o[0] = 190; o[1] = 0; o[2] = 70; r.k = 'err'; r.br = 1; }
     else if (st === 'stalled') { o[0] = 70; o[1] = 40; o[2] = 34; r.k = 'stall'; r.br = 1; }
-    else { o[0] = 29 * thin; o[1] = 20 * thin; o[2] = 26; r.k = 'idle'; r.br = 1; }
+    else { o[0] = quiet ? 0 : 29 * thin; o[1] = quiet ? 0 : 20 * thin; o[2] = 26; r.k = 'idle'; r.br = 1; }
   }
   var IDLE_MINLEN = 90, QI = function (q) { return q > 0.55 ? q : 0.55 + (q - 0.12) * 0.1; };   /* idle quality is cut far less than running quality */
   function depRate(r) { var s = r.status; return s === 'running' ? 60 : s === 'done' ? 30 : (r.nm && s !== 'stopped') ? 14 : 0; }
@@ -535,7 +535,7 @@
     state = st; prev = pv;
     if (!state) return;
     T.now = Date.now() / 1000; live.l = liveness();
-    var hb = state.heartbeat, evs = state.events || [], go = state.goal, lv = enabled && !document.hidden && prev;
+    var hb = state.heartbeat, evs = state.events || [], go = state.goal, lv = enabled && mode !== 'lines' && !document.hidden && prev;
     if (hb && lastSeq != null && hb.seq !== lastSeq && lv && live.l !== 'stopped' && live.l !== 'paused') tick();
     if (hb) lastSeq = hb.seq;
     var mx = 0; evs.forEach(function (e) { if (e.seq > mx) mx = e.seq; });
@@ -559,9 +559,44 @@
   function percentile95() {
     var n = cfill, a = Array.prototype.slice.call(cbuf, 0, n).sort(function (x, y) { return x - y; }); return a[Math.min(n - 1, Math.floor(n * 0.95))] || 0;
   }
+  /* LINES: edges and deps as static canvas strokes along the lane centreline, look by status; no particles, no spawn, no waves */
+  function lineLook(r) {
+    var c = col, a = light ? 1.25 : 1, s = r.status;
+    if (r.dep) return s === 'running' ? [c.acc, 0.6 * a, 1.3, [1.5, 4]] : s === 'stopped' ? [c.idle, 0.12 * a, 1, [1.5, 4]] : [c.acc, 0.3 * a, 1, [1.5, 4]];
+    if (s === 'running') return [c.run, 0.85, 1.8, null];
+    if (s === 'errored') return [c.err, 0.9, 1.5, [2, 3]];
+    if (s === 'stalled') return [c.stall, 0.8, 1.4, [6, 4]];
+    return [c.idle, s === 'stopped' ? 0.14 * a : 0.3 * a, 1, null];
+  }
+  function strokeLane(r, id) {
+    if (!r.g || r.dead) return;
+    var R = r.s1 - r.s0; if (R < 8) return;
+    var lk = lineLook(r), n = Math.max(2, Math.min(24, Math.ceil(R / 20))), j, X, Y;
+    ctx.beginPath();
+    for (j = 0; j <= n; j++) {
+      atLane(r, r.s0 + R * j / n, 0.5, 0, 0);
+      X = M[0] * tmp.x + M[2] * tmp.y + M[4]; Y = M[1] * tmp.x + M[3] * tmp.y + M[5];
+      if (j) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+    }
+    ctx.strokeStyle = 'rgb(' + lk[0][0] + ',' + lk[0][1] + ',' + lk[0][2] + ')'; ctx.globalAlpha = Math.min(1, lk[1]);
+    ctx.lineWidth = lk[2] * DPR; ctx.setLineDash(lk[3] ? lk[3].map(function (d) { return d * DPR; }) : []);
+    ctx.stroke(); lastLines++; lineSty[id] = [ctx.strokeStyle, lk[2], lk[3] ? lk[3].length : 0, lk[1]];
+  }
+  function drawLines() {
+    var k; checkGeom();
+    for (var j = 0; j < dying.length; j++) etab[dying[j].idx] = null;
+    dying.length = 0;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.imageSmoothingEnabled = true; ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    lastLines = 0; lineSty = {};
+    for (k in fd) strokeLane(fd[k], 'dep:' + k);
+    for (k in fe) strokeLane(fe[k], k);
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+  }
   function frame(now) {
     raf = 0;
-    if (!enabled || document.hidden) return;
+    if (!canDraw() || document.hidden) return;
+    if (mode === 'lines') { drawLines(); return; }   /* LINES: one static redraw per kick; the loop is not rescheduled */
     raf = requestAnimationFrame(frame);
     var dms = now - last; if (throttled && dms < 28) return;
     var dt = Math.min(0.066, last ? dms / 1000 : 0.016); last = now;
@@ -583,21 +618,41 @@
       liveCap = Math.max(4800, Math.round(POOL * Math.min(1, quality * 1.3)));
     }
   }
-  function kick() { if (enabled && !raf && !document.hidden && col) { last = 0; raf = requestAnimationFrame(frame); } }
+  function canDraw() { return !!ctx && (enabled || mode === 'lines'); }
+  function kick() { if (canDraw() && !raf && !document.hidden && col) { last = 0; raf = requestAnimationFrame(frame); } }
   function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
   function killAll() { for (var i = 0; i < hi; i++) if (P_on[i]) kill(i); hi = 0; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); }
 
+  function redraw() { refreshGeom(); if (mode === 'lines') kick(); }
   readColors(); watchDpr();
   document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); else { refreshGeom(); kick(); } });
-  var chg = function () { enabled = !(rm && rm.matches); if (!enabled) { stop(); killAll(); } else kick(); };
+  var chg = function () { enabled = !(rm && rm.matches); if (!enabled) { stop(); killAll(); } kick(); };
   if (rm) { if (rm.addEventListener) rm.addEventListener('change', chg); else if (rm.addListener) rm.addListener(chg); }
   if (cm) { if (cm.addEventListener) cm.addEventListener('change', readColors); else if (cm.addListener) cm.addListener(readColors); }
   setInterval(readColors, 4000);   /* theme tokens may change without a colour-scheme flip */
-  if (window.ResizeObserver) new ResizeObserver(refreshGeom).observe(graph);
-  window.addEventListener('resize', refreshGeom); window.addEventListener('scroll', refreshGeom, true); window.addEventListener('load', refreshGeom);
-  window.__aosFx = { dpr: function () { return DPR; }, canvas: function () { return cv; }, active: function () { return liveN; }, cost: function () { return lastCost; }, p95: function () { return p95; }, throttled: function () { return throttled; }, enabled: function () { return enabled; }, quality: function () { return quality; }, capture: function (cb) { capNext = cb; kick(); }, edgeCount: function () { var o = {}, i; for (i = 0; i < hi; i++) if (P_on[i] && !P_free[i] && etab[P_e[i]]) { var id = etab[P_e[i]].id; o[id] = (o[id] || 0) + 1; } return o; }, nodes: function () { var o = [], i; for (i = 0; i < GN; i++) o.push([GX[i], GY[i], GR[i]]); return o; }, matrix: function () { return M.slice(); } };
+  if (window.ResizeObserver) new ResizeObserver(redraw).observe(graph);
+  window.addEventListener('resize', redraw); window.addEventListener('scroll', redraw, true); window.addEventListener('load', redraw);
+  setInterval(function () { if (mode === 'lines' && !nmMode) { dirty = true; kick(); } }, 1000);   /* legacy (non-explicit) graph: poll for CSS-moved nodes while the loop is idle */
+  window.__aosFx = { lines: function () { return lastLines; }, lineStyles: function () { return lineSty; }, rafPending: function () { return !!raf; }, dpr: function () { return DPR; }, canvas: function () { return cv; }, active: function () { return liveN; }, cost: function () { return lastCost; }, p95: function () { return p95; }, throttled: function () { return throttled; }, enabled: function () { return enabled; }, quality: function () { return quality; }, capture: function (cb) { capNext = cb; kick(); }, edgeCount: function () { var o = {}, i; for (i = 0; i < hi; i++) if (P_on[i] && !P_free[i] && etab[P_e[i]]) { var id = etab[P_e[i]].id; o[id] = (o[id] || 0) + 1; } return o; }, nodes: function () { var o = [], i; for (i = 0; i < GN; i++) o.push([GX[i], GY[i], GR[i]]); return o; }, matrix: function () { return M.slice(); } };
   /* theme toggle: re-read tokens at once (sprites rebuilt when they changed); colKey is exposed for tests */
   function refreshColors() { readColors(); if (typeof invalidate === 'function') invalidate(); kick(); return colKey; }
   window.addEventListener('aos-theme', refreshColors);
-  window.AosFx = { sync: sync, onState: onState, invalidate: invalidate, refreshColors: refreshColors, refreshView: function () { refreshGeom(); kick(); }, colorKey: function () { return colKey; } };
+  /* streams mode: 'full' | 'quiet' (idle edges draw no particles) | 'lines' (no particles at all, static status-coded lines, loop idles).
+     Switching clears the particles that no longer belong and re-prefills lanes when particles come back. */
+  function setMode(m) {
+    m = m === 'quiet' || m === 'lines' ? m : 'full'; if (m === mode) return;
+    var was = mode, k, i, r; mode = m; quiet = m === 'quiet';
+    if (m === 'lines') { stop(); killAll(); dying.length = 0; }
+    else {
+      if (was === 'lines') { for (k in fe) fe[k].filled = false; for (k in fd) fd[k].filled = false; }
+      else {
+        for (i = 0; i < hi; i++) if (P_on[i] && !P_free[i]) { r = etab[P_e[i]]; if (r && !r.dep && r.k === 'idle') kill(i); }
+        while (hi > 0 && !P_on[hi - 1]) hi--;
+        for (k in fe) if (fe[k].k === 'idle') fe[k].filled = false;
+      }
+    }
+    kick();
+  }
+  function setQuiet(v) { setMode(v ? 'quiet' : 'full'); }
+  window.AosFx = { sync: sync, onState: onState, invalidate: invalidate, refreshColors: refreshColors, refreshView: function () { refreshGeom(); kick(); }, colorKey: function () { return colKey; }, setQuiet: setQuiet, getQuiet: function () { return quiet; }, setMode: setMode, getMode: function () { return mode; } };
 })();
