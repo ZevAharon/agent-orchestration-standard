@@ -43,14 +43,29 @@ async function doctor() {
   settings && settings.extraKnownMarketplaces && settings.extraKnownMarketplaces['aos-local'] ? ok('marketplace aos-local registered') : warn('marketplace aos-local not registered');
   const hooksLog = path.join(DATA, 'live', 'hook-events.ndjson');
   if (fs.existsSync(hooksLog)) { const age = (Date.now() - fs.statSync(hooksLog).mtimeMs) / 3600000; age < 24 ? ok(`hooks are logging (last event ${age < 1 ? Math.round(age * 60) + ' min' : age.toFixed(1) + ' h'} ago)`) : warn(`hook log is ${age.toFixed(0)} h old: open a NEW Claude Code session (existing ones keep their old hooks; or /reload-plugins)`); }
-  else warn('no hook log yet: start a new Claude Code session');
+  else warn('no hook log yet: normal before your first session. Start a new Claude Code session and it appears');
   (await probe()) ? ok(`monitor reachable at http://127.0.0.1:${PORT}`) : warn(`monitor not running on :${PORT} (it starts with a session, or: make start)`);
   const onPath = run('which', ['aos-dash']);
-  onPath ? ok(`aos-dash on PATH (${onPath.trim()})`) : warn('aos-dash not on PATH (make link)');
+  if (!onPath) warn('aos-dash not on PATH (make link)');
+  else {
+    const found = onPath.trim(); let real = found; try { real = fs.realpathSync(found); } catch {}
+    const mine = path.join(REPO, 'plugin', 'bin') + path.sep;
+    real.startsWith(mine) ? ok(`aos-dash on PATH (${found})`) : warn(`aos-dash on PATH is a different install: ${found} -> ${real} (not in this checkout ${REPO}; run: make link)`);
+  }
   settings && settings.statusLine && String(settings.statusLine.command || '').includes('aos-statusline') ? ok('status line configured') : warn('status line not configured (optional: make statusline)');
   fs.existsSync(path.join(DATA, 'AOS Notifier.app')) ? ok('notifier app built (branded macOS alerts)') : warn('notifier app not built (optional: make notifier)');
   console.log(essential ? `\n${essential} essential problem(s).` : '\nAll essentials OK.');
   process.exit(essential ? 1 : 0);
+}
+
+// Stop only the AOS monitor listening on PORT (never other monitors).
+async function stop() {
+  const pids = (run('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN']) || '').split('\n').filter(Boolean);
+  const mine = pids.filter((p) => /monitor\.mjs/.test(run('ps', ['-p', p, '-o', 'command=']) || ''));
+  if (!mine.length) { console.log(`monitor was not running on :${PORT}`); return; }
+  for (const p of mine) { try { process.kill(Number(p)); } catch {} }
+  for (let i = 0; i < 20 && mine.some((p) => { try { process.kill(Number(p), 0); return true; } catch { return false; } }); i++) await new Promise((r) => setTimeout(r, 100));
+  console.log(`monitor on :${PORT} stopped (other AOS monitors left alone)`);
 }
 
 function link() {
@@ -59,7 +74,7 @@ function link() {
   fs.mkdirSync(BIN, { recursive: true });
   try { if (!fs.lstatSync(dst).isSymbolicLink()) { bad(`${dst} exists and is not a symlink: left alone`); process.exit(1); } fs.unlinkSync(dst); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   fs.symlinkSync(src, dst); ok(`linked ${dst} -> ${src}`);
-  if (!(process.env.PATH || '').split(':').includes(BIN)) warn(`${BIN} is not on your PATH: add it to your shell profile`);
+  if (!(process.env.PATH || '').split(':').includes(BIN)) warn(`${BIN} is not on your PATH. Add this line to your shell profile (~/.zshrc or ~/.bashrc):\n      export PATH="${BIN === path.join(HOME, '.local', 'bin') ? '$HOME/.local/bin' : BIN}:$PATH"`);
 }
 function unlink() { const dst = path.join(BIN, 'aos-dash'); try { if (fs.lstatSync(dst).isSymbolicLink()) { fs.unlinkSync(dst); ok(`removed ${dst}`); } else warn(`${dst} is not a symlink: left alone`); } catch { ok('aos-dash link not present'); } }
 
@@ -77,4 +92,4 @@ function statusline(on) {
 }
 
 const cmd = process.argv[2];
-({ doctor, link, unlink, statusline: () => statusline(true), 'statusline-off': () => statusline(false) }[cmd] || (() => { console.error('usage: aos.mjs doctor|link|unlink|statusline|statusline-off'); process.exit(2); }))();
+({ doctor, stop, link, unlink, statusline: () => statusline(true), 'statusline-off': () => statusline(false) }[cmd] || (() => { console.error('usage: aos.mjs doctor|stop|link|unlink|statusline|statusline-off'); process.exit(2); }))();

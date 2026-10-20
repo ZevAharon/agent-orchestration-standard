@@ -1044,7 +1044,7 @@
     ag.forEach(function (a) { if (!sticky[a.id] && taskLineFor(a)) sticky[a.id] = 1; });
     SYNC = { added: [], hard: false };
     var setChanged = syncNodes(MODEL);
-    $('empty').hidden = ag.length > 0; if (!ag.length) $('empty').textContent = 'No crew registered.';
+    $('empty').hidden = ag.length > 0; if (!ag.length) $('empty').textContent = 'Waiting for your first Claude Code session — start one in any project and it appears here.';
     var sig = sigOf(MODEL), first = WD.fit < 0;
     if (sig !== SIG || first) {
       var szKey = [L.mobile ? 'm' : 'd', applied.w, applied.h].join('|'), sizeChanged = szKey !== SIGZ;

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // AOS terminal dashboard. Zero dependencies, Node 18+. Talks to 127.0.0.1 only.
 import { pathToFileURL } from 'node:url';
+import os from 'node:os';
+import path from 'node:path';
 
 // ---------------------------------------------------------------- palette
 const PAL = {
@@ -650,10 +652,29 @@ function drawDown(cols, rows, opts) {
   return finish(g, model, opts);
 }
 
+function drawWaiting(cols, rows, opts) {
+  const g = new Grid(cols, rows);
+  g.put(1, 0, ' AOS ', 'brasshi', true); g.put(6, 0, 'LIVE', 'dim', true);
+  const msg = ['Waiting for your first Claude Code session', 'start one in any project and it appears here'];
+  const y = Math.max(1, Math.floor(rows / 2) - 1);
+  msg.forEach((m, i) => g.put(Math.max(0, Math.floor((cols - len(m)) / 2)), y + i, clip(m, cols), i ? 'dim' : 'text2'));
+  if (rows > 2) g.put(0, rows - 1, clip(' q quit', cols), 'dim');
+  const model = { mode: 'waiting', orbs: [], labels: [], particles: [], reserved: new Set(), cols, rows };
+  return finish(g, model, opts);
+}
+
+// If the install dir (default ~/.local/bin) is not on PATH, the exact line to add; else ''.
+export function pathHint(env = process.env, home = os.homedir()) {
+  const bin = path.join(home, '.local', 'bin');
+  if ((env.PATH || '').split(path.delimiter).includes(bin)) return '';
+  return `${bin} is not on your PATH. Add this line to your shell profile (~/.zshrc or ~/.bashrc):\n  export PATH="$HOME/.local/bin:$PATH"`;
+}
+
 export function renderModel(state, cols, rows, opts = {}) {
   cols = Math.max(20, cols | 0); rows = Math.max(5, rows | 0);
   const view = opts.view || (opts.list ? 'list' : 'auto');
   if (!state || !Array.isArray(state.agents)) return drawDown(cols, rows, opts);
+  if (!state.agents.length) return drawWaiting(cols, rows, opts);
   return drawGrid(state, cols, rows, { ...opts, view });
 }
 
@@ -706,7 +727,7 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2); const o = parseArgs(argv);
-  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--port N] [--no-color] [--size WxH]\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows nothing until a Claude Code session is running\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help'); return; }
+  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--port N] [--no-color] [--size WxH]\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
   const out = process.stdout; const color = detectColor(process.env, out, argv);
   const target = `127.0.0.1:${o.port}`;
   if (o.once || !out.isTTY) {
