@@ -644,7 +644,7 @@
     var was = mode, k, i, r; mode = m; quiet = m === 'quiet';
     if (m === 'lines') { stop(); killAll(); dying.length = 0; }
     else {
-      if (was === 'lines') { for (k in fe) fe[k].filled = false; for (k in fd) fd[k].filled = false; }
+      if (was === 'lines') { for (k in fe) fe[k].filled = false; for (k in fd) fd[k].filled = false; if (!enabled) { killAll(); lastLines = 0; lineSty = {}; } /* reduced motion: nothing redraws, so drop the static Lines drawing */ }
       else {
         for (i = 0; i < hi; i++) if (P_on[i] && !P_free[i]) { r = etab[P_e[i]]; if (r && !r.dep && r.k === 'idle') kill(i); }
         while (hi > 0 && !P_on[hi - 1]) hi--;

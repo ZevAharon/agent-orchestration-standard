@@ -71,6 +71,14 @@ function fx(opts = {}) {
   const { A, cnt } = fx({ reduced: true }); A.setQuiet(true); A.setQuiet(false);
   ok('reduced-motion: no particles in either mode', Object.keys(cnt()).length === 0, cnt());
 }
+{ // reduced motion: leaving LINES must clear the static drawing (nothing redraws it afterwards)
+  const e = env({ reduced: true }); e.run('particles.js'); const A = e.win.AosFx, X = e.win.__aosFx;
+  A.setMode('lines'); A.sync(Object.assign(data(edges()), { graph: e.win.document.getElementById('graph') })); e.step(5);
+  const drawn = X.lines(); A.setMode('full'); e.step(5);
+  ok('reduced-motion: LINES drew lines, then FULL leaves zero drawn lines', drawn === 5 && X.lines() === 0 && X.active() === 0, [drawn, X.lines()]);
+  A.setMode('lines'); e.step(5); A.setMode('quiet'); e.step(5);
+  ok('reduced-motion: LINES -> QUIET leaves zero drawn lines', X.lines() === 0, X.lines());
+}
 { // app.js toggle: default FULL, persistence, Q key
   const T = (storage, throwing) => { const e = env({ storage, throwing }); const calls = [];
     e.win.AosFx = e.ctx.AosFx = { setMode: v => calls.push(v) };

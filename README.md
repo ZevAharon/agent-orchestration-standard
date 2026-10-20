@@ -19,7 +19,7 @@ make doctor         # checks the whole setup and tells you what to fix
 make                # lists every target
 ```
 
-Then start a new Claude Code session and open http://127.0.0.1:4318. Local-only, read-only; hooks log event and tool names, never prompts or file contents. Status: personal project, macOS-first. [MIT License](LICENSE).
+Then start a new Claude Code session and open http://127.0.0.1:4318. Local-only, read-only; hooks never log prompts, file contents or tool output, but do log event and tool names, working-folder and edited-file paths, transcript paths and a redacted short task description (full list: [plugin/README.md](plugin/README.md#privacy)). Status: personal project, macOS-first. [MIT License](LICENSE).
 
 ## GOALS panel
 
