@@ -16,7 +16,7 @@ test('validateRemote accepts normal targets', () => {
 test('validateRemote rejects injection attempts', () => {
   const bad = ['-oProxyCommand=evil', '-v', 'a b', 'me@host;rm -rf /', 'me@host$(id)', 'me@host`id`', 'me@host|x', 'me@host&x', 'me@host\nx', "me@ho'st", 'me@-host', '@host', 'me@', 'a@b@c', 'ho..st', '', 'host/../x', 'me@host:22', '$HOME', 'a>b', '--help'];
   for (const ssh of bad) assert.throws(() => validateRemote({ name: 'x', ssh }), /ssh|target/, ssh);
-  for (const name of ['', '-x', 'a b', 'a:b', 'local', 'LOCAL', 'x'.repeat(33), '<b>', 5]) assert.throws(() => validateRemote({ name, ssh: 'h' }), undefined, String(name));
+  for (const name of ['', '-x', 'a b', 'a:b', 'local', 'LOCAL', 'all', 'All', 'x'.repeat(33), '<b>', 5]) assert.throws(() => validateRemote({ name, ssh: 'h' }), undefined, String(name));
   for (const port of [0, 70000, 1.5, '4318', '4318; id', -1, NaN, null]) assert.throws(() => validateRemote({ name: 'x', ssh: 'h', port }), /port/, String(port));
   for (const r of [null, 'x', [], 5]) assert.throws(() => validateRemote(r));
 });
@@ -28,8 +28,8 @@ test('parseRemotes keeps valid, drops invalid/duplicate with warnings', () => {
 });
 test('ssh argv is a plain array, target after --, port numeric', () => {
   const a = sshArgv(ok);
-  assert.deepEqual(a.slice(0, 5), ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '--']);
-  assert.equal(a[5], ok.ssh); assert.match(a[6], /^curl -sf --max-time 4 'http:\/\/127\.0\.0\.1:4318\/api\/state\?local=1'$/);
+  assert.deepEqual(a.slice(0, 8), ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'ControlMaster=no', '--']);
+  assert.equal(a[8], ok.ssh); assert.match(a[9], /^curl -sf --max-time 4 'http:\/\/127\.0\.0\.1:4318\/api\/state\?local=1'$/);
 });
 
 const mk = (extra = {}) => ({ agents: [{ id: 'Claude Code·ab12', status: 'running', project: 'proj', project_id: 'proj', current_task: null }, { id: 'sub·cd34', status: 'idle', project: 'proj', project_id: 'proj', current_task: 't-sub·cd34', goal_id: 'g1' }],
@@ -54,7 +54,7 @@ test('merge: tags machines, namespaces ids, no collisions, aggregates totals', (
   const p = m.projects.find((x) => x.machine === 'laptop2'); assert.deepEqual(p.agents, ['laptop2:Claude Code·ab12', 'laptop2:sub·cd34']);
   assert.equal(m.alerts.find((a) => a.machine === 'laptop2').agent, 'laptop2:sub·cd34');
   assert.deepEqual(m.collisions[0].agents, ['laptop2:sub·cd34', 'laptop2:Claude Code·ab12']);
-  const ev = m.events.filter((e) => e.machine === 'laptop2'); assert.equal(ev[0].actor, 'laptop2:sub·cd34'); assert.equal(ev[1].actor, 'human');
+  const ev = m.events.filter((e) => e.machine === 'laptop2'); assert.equal(ev[0].actor, 'laptop2:sub·cd34'); assert.equal(ev[1].actor, 'laptop2:human');
   assert.deepEqual(m.events.map((e) => e.seq), [0, 1, 2]);
   assert.equal(m.goals[0].id, 'laptop2:g1');
   assert.equal(m.cost.tokens_total, 150); assert.equal(m.cost.total_usd_est, 2); assert.equal(m.cost.by_model.m1.input, 11);
@@ -73,7 +73,7 @@ test('merge: offline machine reported, its stale-expired data omitted; error sho
 test('merge: hostile remote data cannot pollute prototypes or break shape', () => {
   const evil = mk({ cost: { by_model: JSON.parse('{"__proto__":{"input":9},"x":5}'), tokens_total: 'lots' }, agents: [5, null, { id: 7 }, { id: '<img src=x onerror=1>', status: 'running' }] });
   const m = mergeState(local(), [snap(evil)]);
-  assert.equal({}.input, undefined); assert.equal(m.agents.length, 2); assert.equal(m.agents[1].id, 'laptop2:<img src=x onerror=1>'); assert.equal(m.cost.tokens_total, 50);
+  assert.equal({}.input, undefined); assert.equal(m.agents.length, 3); assert.equal(m.agents[1].id, 'laptop2:7'); assert.equal(m.agents[2].id, 'laptop2:<img src=x onerror=1>'); assert.equal(m.cost.tokens_total, 50);
 });
 
 test('parseState: size cap, bad JSON, wrong shape', () => {
@@ -134,4 +134,42 @@ test('integration: aggregated /api/state through a fake ssh shim', async () => {
     const raw = (await L.get('/api/state?local=1')).json; assert.equal(raw.machines, undefined, 'local=1 is never re-aggregated');
     assert.ok(raw.agents.every((a) => a.machine === undefined));
   } finally { await L.stop(); await R.stop(); fs.rmSync(TMP, { recursive: true, force: true }); }
+});
+
+// ---- review hardening ----
+const T0 = Date.parse('2026-06-01T00:00:00Z');
+const poll1 = async (body, remote = ok) => { const c = createCollector({ remotes: [remote], run: async () => JSON.stringify(body), now: () => T0 }); await c.tick(); return c.snapshot(); };
+test('remote cannot evict local alerts/events with future or bogus timestamps', async () => {
+  const la = Array.from({ length: 20 }, (_, i) => ({ ts: `2026-05-31T00:00:${String(i).padStart(2, '0')}Z`, agent: 'a', kind: 'k' }));
+  const le = Array.from({ length: 200 }, (_, i) => ({ ts: `2026-05-31T01:00:00.${String(i).padStart(3, '0')}Z`, actor: 'a' }));
+  const loc = { ...local(), alerts: la, events: le };
+  const bad = ['9999', '9999-01-01T00:00:00Z', 'zzz', 5, null, '2099-01-01T00:00:00Z'];
+  const snaps = await poll1(mk({ alerts: Array.from({ length: 100 }, (_, i) => ({ ts: bad[i % bad.length], agent: 'x' })), events: Array.from({ length: 200 }, (_, i) => ({ ts: bad[i % bad.length], actor: 'x' })) }));
+  const m = mergeState(loc, snaps);
+  assert.ok(m.alerts.filter((x) => x.machine === 'local').length >= 10, 'local alerts survive');
+  assert.ok(m.events.filter((x) => x.machine === 'local').length >= 100, 'local events survive');
+  assert.ok(m.alerts.filter((x) => x.machine === 'laptop2').length <= 10 && m.alerts.length <= 20);
+  for (const x of [...m.alerts, ...m.events].filter((x) => x.machine === 'laptop2')) assert.ok(Date.parse(x.ts) <= T0 + 60000, x.ts);
+});
+test('all remote references are namespaced, coerced, and empties get anon ids', async () => {
+  const snaps = await poll1(mk({ agents: [{ id: 'Claude Code·ab12' }, { id: 7 }, { id: '' }], events: [{ ts: '2026-01-01T00:00:01Z', actor: 'Claude Code·ab12', task_id: 5, goal_id: '' }, { ts: '2026-01-01T00:00:02Z', actor: 12 }],
+    tasks: [{ id: 't', assignee: 'Claude Code·ab12', depends_on: ['a', 3, '', null] }], collisions: [{ file: 'f', agents: ['Claude Code·ab12', 9] }] }));
+  const m = mergeState(local(), snaps), r = (k) => m[k].filter((x) => x.machine === 'laptop2');
+  assert.ok(r('agents').every((a) => a.id.startsWith('laptop2:'))); assert.ok(r('agents').some((a) => a.id === 'laptop2:7') && r('agents').some((a) => /^laptop2:anon-\d+$/.test(a.id)));
+  assert.ok(!m.agents.some((a) => a.machine === 'local' && r('agents').some((x) => x.id === a.id)));
+  assert.equal(r('events')[0].actor, 'laptop2:Claude Code·ab12'); assert.equal(r('events')[0].task_id, 'laptop2:5'); assert.equal(r('events')[1].actor, 'laptop2:12');
+  assert.match(r('events')[0].goal_id, /^laptop2:anon-/);
+  assert.ok(r('tasks')[0].depends_on.every((d) => typeof d === 'string' && d.startsWith('laptop2:'))); assert.deepEqual(r('collisions')[0].agents.slice(0, 2), ['laptop2:Claude Code·ab12', 'laptop2:9']);
+});
+test('large payload: bounded, tagged once per poll, merge stays fast', async () => {
+  const big = 'y'.repeat(600), N = 2000;
+  const body = mk({ agents: Array.from({ length: 3000 }, (_, i) => ({ id: 'a' + i, status: 'idle', project: big })), tasks: Array.from({ length: N }, (_, i) => ({ id: 't' + i, depends_on: Array.from({ length: 100 }, (_, j) => 'd' + j), title: big })) });
+  let tags = 0; const snaps = await poll1(body);
+  const d = snaps[0].data;
+  assert.equal(d.agents.length, 2000); assert.equal(d.tasks[0].depends_on.length, 64); assert.equal(d.tasks[0].title.length, 512);
+  assert.ok(snaps[0].rows && snaps[0].rows.agents.length === 2000, 'rows cached in snapshot');
+  const t0 = process.hrtime.bigint(); for (let i = 0; i < 20; i++) { const s2 = (tags++, mergeState(local(), snaps)); assert.equal(s2.agents.length, 2001); }
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 20;
+  assert.ok(ms < 100, 'merge per request ' + ms + 'ms');
+  const keep = snaps[0].rows.agents[0]; mergeState(local(), snaps); assert.equal(snaps[0].rows.agents[0], keep, 'cached rows are reused, not rebuilt');
 });

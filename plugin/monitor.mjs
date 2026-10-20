@@ -913,10 +913,14 @@ function serveStatic(req, res, pathname) {
 }
 
 // ---------- cross-machine (opt-in, read-only; polls other dashboards over ssh, opens no port) ----------
-let collector = null, collectorKey = null;
+let collector = null, collectorKey = null, cfgStamp = null;
 function remoteCollector() {
-  const load = (warn) => remotesFromEnv(process.env, warn) || parseRemotes(cfg().remotes, warn), key = JSON.stringify(load());
-  if (key !== collectorKey) { collectorKey = key; const list = load((m) => console.error('[remotes] ' + m)); collector = list.length ? createCollector({ remotes: list }) : null; }
+  // config.json is only re-read when its mtime changes; the remote list is parsed once per call.
+  let stamp = 'none'; try { const st = fs.statSync(path.join(LIVE, 'config.json')); stamp = st.mtimeMs + ':' + st.size; } catch {}
+  if (collectorKey !== null && stamp === cfgStamp) return collector;
+  cfgStamp = stamp;
+  const warnings = [], list = remotesFromEnv(process.env, (m) => warnings.push(m)) || parseRemotes(cfg().remotes, (m) => warnings.push(m)), key = JSON.stringify(list);
+  if (key !== collectorKey) { collectorKey = key; for (const m of warnings) console.error('[remotes] ' + m); collector = list.length ? createCollector({ remotes: list }) : null; }
   return collector;
 }
 function stateWithMachines() { const c = remoteCollector(); return mergeState(build(), c ? c.snapshot() : []); }

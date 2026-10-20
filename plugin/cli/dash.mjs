@@ -81,7 +81,7 @@ function wrapName(name, max) {
 // ---------------------------------------------------------------- grid
 class Grid { // put() replaces control characters from state with spaces, so no terminal escapes are ever emitted from data
   constructor(cols, rows) { this.cols = cols; this.rows = rows; this.ch = Array.from({ length: rows }, () => Array(cols).fill(' ')); this.st = Array.from({ length: rows }, () => Array(cols).fill(null)); }
-  put(x, y, text, role, bold) { let i = 0; for (let c of String(text)) { if (/[\u0000-\u001f\u007f-\u009f]/.test(c)) c = ' '; const xx = x + i++; if (xx >= 0 && xx < this.cols && y >= 0 && y < this.rows) { this.ch[y][xx] = c; this.st[y][xx] = role ? role + (bold ? '!' : '') : null; } } }
+  put(x, y, text, role, bold) { let i = 0; for (let c of String(text)) { if (/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(c)) c = ' '; const xx = x + i++; if (xx >= 0 && xx < this.cols && y >= 0 && y < this.rows) { this.ch[y][xx] = c; this.st[y][xx] = role ? role + (bold ? '!' : '') : null; } } }
   segs(x, y, segs) { for (const [t, r, b] of segs) { this.put(x, y, t, r, b); x += len(t); } }
   text() { return this.ch.map((r) => r.join('').replace(/\s+$/, '')); }
   ansi(mode) {
