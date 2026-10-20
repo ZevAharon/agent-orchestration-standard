@@ -19,3 +19,8 @@ test('manifests, skill and UI do not call the dashboard orchestration', () => {
   assert.doesNotMatch(read('plugin/skills/dashboard/SKILL.md').split('\n')[2], /orchestration/i);
   assert.match(read('ui/index.html'), /<title>AOS Dashboard<\/title>/);
 });
+test('README shows aos-dash + terminal screenshot and mentions Streams: Lines', () => {
+  const r = read('README.md');
+  assert.match(r, /`aos-dash`[^\n]*terminal view/); assert.match(r, /Lines/); assert.match(r, /docs\/screenshots\/08-terminal\.png/);
+  assert.ok(fs.existsSync(path.join(ROOT, 'docs/screenshots/08-terminal.png')));
+});
