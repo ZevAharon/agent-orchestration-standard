@@ -79,12 +79,13 @@ test('GET /api/goals: summary fields mapped from the real engine files', async (
 test('GET /api/goals/:id: detail fields', async () => {
   const r = await M.get('/api/goals/g-test');
   assert.equal(r.status, 200);
-  const d = r.json;
+  const d = r.json.goal;
+  assert.deepEqual(Object.keys(r.json), ['goal']);   // UI (orch.js pollDetail) reads j.goal
   assert.equal(d.id, 'g-test'); assert.equal(d.description, '');
   assert.deepEqual(d.criteria, [{ id: 'c1', text: 'a, b and c present', met: true }]);
   assert.deepEqual(d.tasks.map((t) => t.id), ['t1', 't2', 't3']);
   for (const t of d.tasks) {
-    assert.deepEqual(Object.keys(t).sort(), ['attempts', 'branch', 'check_summary', 'depends_on', 'id', 'max_attempts', 'new_tokens', 'phase', 'ran_s', 'status', 'tier', 'title', 'waiting_for_human'].sort());
+    assert.deepEqual(Object.keys(t).sort(), ['attempts', 'branch', 'check_summary', 'cost_usd', 'depends_on', 'id', 'max_attempts', 'new_tokens', 'outcome', 'phase', 'ran_s', 'retries', 'status', 'tier', 'tier_path', 'title', 'waiting_for_human', 'waiting_s'].sort());
     assert.equal(t.status, 'done'); assert.equal(t.tier, 'haiku'); assert.equal(t.attempts, 1); assert.equal(t.branch, `aos/g-test/${t.id}`);
     assert.equal(t.phase, null); assert.equal(t.check_summary, 'checks passed'); assert.ok(t.new_tokens > 0); assert.ok(Number.isInteger(t.ran_s) && t.ran_s >= 0);
   }
@@ -135,15 +136,15 @@ test('partial / corrupt files: skipped or tolerated, never a crash', async () =>
   assert.deepEqual(ids, ['g-badtasks', 'g-evt', 'g-notasks', 'g-test']);
   assert.equal(r.json.goals.find((g) => g.id === 'g-notasks').tasks_total, 0);
   assert.equal(r.json.goals.find((g) => g.id === 'g-badtasks').tasks_total, 0);
-  const ev = (await M.get('/api/goals/g-evt')).json.last_events;
+  const ev = (await M.get('/api/goals/g-evt')).json.goal.last_events;
   assert.deepEqual(ev.map((e) => e.type), ['goal.created', 'task.started']);
   assert.equal(ev[1].text, 'tier=haiku'); assert.equal(ev[1].task_id, 't1');
   // a partial rewrite of a previously good file keeps the last good data; recovery is picked up
   const f = path.join(G('g-test'), 'tasks.json'), keep = fs.readFileSync(f, 'utf8');
   fs.writeFileSync(f, keep.slice(0, 40)); await sleep(1150);
-  assert.equal((await M.get('/api/goals/g-test')).json.tasks.length, 3);
+  assert.equal((await M.get('/api/goals/g-test')).json.goal.tasks.length, 3);
   fs.writeFileSync(f, keep); await sleep(1150);
-  assert.equal((await M.get('/api/goals/g-test')).json.tasks_total, 3);
+  assert.equal((await M.get('/api/goals/g-test')).json.goal.tasks_total, 3);
   assert.equal((await M.get('/api/state')).status, 200);
   for (const n of ['g-corrupt', 'g-arr', 'g-notasks', 'g-badtasks', 'g-evt', 'g-empty', 'not a goal!']) fs.rmSync(path.join(ORCH, 'goals', n), { recursive: true, force: true });
   fs.rmSync(path.join(ORCH, 'goals', 'stray-file.txt'));
@@ -187,7 +188,7 @@ test('100 goals: list capped at 50 (newest), state.goals at 20; memory stays bou
     assert.equal((await m.get('/api/state')).json.goals.length, 20);
     assert.equal((await m.get('/api/goals/g-000')).status, 404);       // beyond the cap
     const before = rss();
-    for (let i = 0; i < 60; i++) { const d = (await m.get('/api/goals/g-099')).json; assert.equal(d.last_events.length, 25); await m.get('/api/state'); }
+    for (let i = 0; i < 60; i++) { const d = (await m.get('/api/goals/g-099')).json.goal; assert.equal(d.last_events.length, 25); await m.get('/api/state'); }
     assert.ok(rss() - before < 150, `rss grew ${rss() - before} MB`);
     assert.ok(rss() < 400, `rss ${rss()} MB`);
   } finally { await m.stop(); }
@@ -226,7 +227,7 @@ test('worker tagging: tagged agents get goal_id/task_id/goal_title and the goal 
   assert.equal(s.goals.find((g) => g.id === 'g-test').workers, wk.filter((a) => a.status === 'running').length);
   assert.ok(s.goals.find((g) => g.id === 'g-test').workers >= 1);
   assert.equal((await M.get('/api/goals')).json.goals[0].workers, s.goals[0].workers);
-  assert.equal((await M.get('/api/goals/g-test')).json.workers, s.goals[0].workers);
+  assert.equal((await M.get('/api/goals/g-test')).json.goal.workers, s.goals[0].workers);
   noPaths(JSON.stringify(s), 'tagged state');
   // replay: goals omitted, tags still derived from the events
   const rp = (await M.get('/api/state?at=' + encodeURIComponent(new Date(Date.now()).toISOString()))).json;

@@ -57,7 +57,10 @@ const tpmStr = (n) => { if (!hasNum(n)) return null; return n >= 1e6 ? (n / 1e6)
 // monitor fields from an older monitor are absent: returns '' so the line is unchanged
 const runPart = (a) => { const r = durStr(a.ran_s), t = tpmStr(a.tok_per_min); return (r ? ` | ran ${r}` : '') + (t ? ` | ${t} tok/min` : ''); };
 
-const goalLine = (g) => { const b = g.budget || {}; return `${trunc(g.id, 64)} | ${trunc(g.title, 80)} | ${trunc(g.status, 20)} | repo ${trunc(g.repo_name, 60) || 'n/a'} | plan ${g.plan_state ?? 'none'} | tasks ${num(g.tasks_done)}/${num(g.tasks_total)} done, ${num(g.tasks_failed)} failed | running ${num(b.running)}/${num(b.max_parallel)} | tokens ${fmt(num(b.used_new_tokens))}/${fmt(num(b.max_new_tokens))} | wall ${durStr(b.used_wall_s) ?? 'n/a'}/${durStr(b.max_wall_s) ?? 'n/a'} | approvals pending ${num(g.approvals_pending)}${hasNum(g.workers) ? ' | workers ' + g.workers : ''}`; };
+const usd = (v) => '$' + Number(v).toFixed(v < 1 ? 4 : 2);
+const goalOutcome = (o) => (o && typeof o === 'object' ? ` | merged ${num(o.merged)} discarded ${num(o.discarded)}${hasNum(o.tokens_per_accepted) ? ' | ' + fmt(o.tokens_per_accepted) + ' tok/accepted' : ''}${hasNum(o.cost_usd) ? ' | cost ' + usd(o.cost_usd) : ''}${hasNum(o.waiting_s) ? ` | waiting on you ${durStr(o.waiting_s)}${o.waiting_on ? ' (' + trunc(o.waiting_on, 20) + ')' : ''}` : ''}` : '');
+const taskOutcome = (t) => (typeof t.outcome === 'string' ? ` | ${trunc(t.outcome, 20)}${num(t.retries) ? ' ' + num(t.retries) + ' retr' + (num(t.retries) === 1 ? 'y' : 'ies') : ''}${tools_(t.tier_path).length > 1 ? ' ' + tools_(t.tier_path).slice(0, 6).map((x) => trunc(x, 12)).join('>') : ''}${hasNum(t.cost_usd) ? ' | ' + usd(t.cost_usd) : ''}${hasNum(t.waiting_s) ? ' | waiting on you ' + durStr(t.waiting_s) : ''}` : '');
+const goalLine = (g) => { const b = g.budget || {}; return `${trunc(g.id, 64)} | ${trunc(g.title, 80)} | ${trunc(g.status, 20)} | repo ${trunc(g.repo_name, 60) || 'n/a'} | plan ${g.plan_state ?? 'none'} | tasks ${num(g.tasks_done)}/${num(g.tasks_total)} done, ${num(g.tasks_failed)} failed | running ${num(b.running)}/${num(b.max_parallel)} | tokens ${fmt(num(b.used_new_tokens))}/${fmt(num(b.max_new_tokens))} | wall ${durStr(b.used_wall_s) ?? 'n/a'}/${durStr(b.max_wall_s) ?? 'n/a'} | approvals pending ${num(g.approvals_pending)}${hasNum(g.workers) ? ' | workers ' + g.workers : ''}${goalOutcome(g.outcome)}`; };
 function toolStr(t) {
   if (!t) return '-';
   return `${t.name ?? '?'}${t.summary ? ' ' + trunc(t.summary, 80) : ''}`;
@@ -233,7 +236,7 @@ const TOOLS = [
   },
   {
     name: 'aos_goals',
-    description: 'Orchestrator goals (read-only): without id, a list of goals with status, plan state, tasks, budget use and pending approvals; with id, one goal in detail (criteria, tasks, newest events). Empty when no orchestrator is in use.',
+    description: 'Orchestrator goals (read-only): without id, a list of goals with status, plan state, tasks, budget use and pending approvals; with id, one goal in detail (criteria, tasks, newest events). Includes outcomes: per task achieved/retried/escalated (tier path)/failed/discarded with tokens and cost, per goal merged vs discarded tasks, tokens per accepted result, cost and how long it has waited on you. Empty when no orchestrator is in use.',
     inputSchema: obj({ id: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', description: 'Goal id as shown by the list.' } }),
     async run(a) {
       const unsupported = () => new ToolError('This AOS monitor does not report goals (no /api/goals endpoint): update the monitor');
@@ -252,7 +255,7 @@ const TOOLS = [
       const L = [goalLine(d), ...(d.description ? ['description: ' + trunc(d.description, 300)] : []),
         `plan: ${d.plan_state ?? 'none'}${d.blocked_reason ? ' | blocked: ' + trunc(d.blocked_reason, 160) : ''}${d.paused_reason ? ' | paused: ' + trunc(d.paused_reason, 160) : ''}${d.resume_at ? ' | resume_at ' + d.resume_at : ''}`,
         'criteria:', ...tools_(d.criteria).slice(0, 50).map((c) => `  - [${c.met ? 'x' : ' '}] ${trunc(c.id, 40)} ${trunc(c.text, 160)}`),
-        'tasks:', ...tools_(d.tasks).slice(0, 200).map((t) => `  - ${trunc(t.id, 64)} | ${trunc(t.status, 20)}${t.phase ? '/' + trunc(t.phase, 20) : ''} | ${t.tier ?? '-'} | attempt ${num(t.attempts)}/${num(t.max_attempts)} | ${fmt(num(t.new_tokens))} tok | ran ${durStr(t.ran_s) ?? 'n/a'}${t.depends_on?.length ? ' | after ' + tools_(t.depends_on).slice(0, 10).join(',') : ''}${t.check_summary ? ' | ' + trunc(t.check_summary, 40) : ''}${t.waiting_for_human ? ' | WAITING FOR HUMAN' : ''}${t.error ? ' | error: ' + trunc(t.error, 160) : ''}`),
+        'tasks:', ...tools_(d.tasks).slice(0, 200).map((t) => `  - ${trunc(t.id, 64)} | ${trunc(t.status, 20)}${t.phase ? '/' + trunc(t.phase, 20) : ''} | ${t.tier ?? '-'} | attempt ${num(t.attempts)}/${num(t.max_attempts)} | ${fmt(num(t.new_tokens))} tok | ran ${durStr(t.ran_s) ?? 'n/a'}${taskOutcome(t)}${t.depends_on?.length ? ' | after ' + tools_(t.depends_on).slice(0, 10).join(',') : ''}${t.check_summary ? ' | ' + trunc(t.check_summary, 40) : ''}${t.waiting_for_human ? ' | WAITING FOR HUMAN' : ''}${t.error ? ' | error: ' + trunc(t.error, 160) : ''}`),
         'last_events:', ...tools_(d.last_events).slice(-25).map((e) => `  - ${trunc(e.ts, 30)} ${trunc(e.type, 60)}${e.task_id ? ' ' + trunc(e.task_id, 64) : ''}${e.text ? ' ' + trunc(e.text, 160) : ''}`)];
       return L.join('\n');
     },

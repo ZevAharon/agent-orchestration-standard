@@ -526,8 +526,8 @@
       });
       s.appendChild(ul);
     });
-    paint(D.budget, JSON.stringify(g.budget), function (s) {
-      label(s, 'Budget'); budgetMeters(s, g.budget);
+    paint(D.budget, JSON.stringify([g.budget, g.outcome]), function (s) {
+      label(s, 'Budget'); budgetMeters(s, g.budget); outcomeLine(s, g.outcome);
       var b = g.budget || {}; if (b.max_attempts != null) s.appendChild(el('p', 'orch-muted tnum', 'max attempts per task: ' + num(b.max_attempts)));
     });
     var tasks = arr(d && d.tasks).filter(isObj);
@@ -559,6 +559,22 @@
     applyWrite();
   }
 
+  function fmtUsd(v) { return '$' + Number(v).toFixed(v < 1 ? 4 : 2); }
+  function outcomeLine(parent, o) {
+    if (!isObj(o)) return;
+    var bits = ['merged ' + num(o.merged) + ' · discarded ' + num(o.discarded)];
+    if (o.tokens_per_accepted != null) bits.push(fmtN(o.tokens_per_accepted) + ' tok per accepted result');
+    if (o.cost_usd != null) bits.push('cost ' + fmtUsd(num(o.cost_usd)));
+    parent.appendChild(el('p', 'orch-muted tnum orch-outcome', bits.join(' · ')));
+    if (o.waiting_s != null) parent.appendChild(el('p', 'orch-waitnote tnum', 'Waiting on you for ' + fmtDur(o.waiting_s) + (o.waiting_on === 'plan' ? ' (plan approval)' : ' (approval)')));
+  }
+  function outcomeWord(t) {
+    var o = t.outcome, tp = arr(t.tier_path).map(function (x) { return tierWord(x); });
+    if (o === 'escalated') return 'escalated ' + tp.join(' → ') + (num(t.retries) ? ' · ' + num(t.retries) + (num(t.retries) === 1 ? ' retry' : ' retries') : '');
+    if (o === 'retried') return 'retried ' + num(t.retries) + (num(t.retries) === 1 ? ' time' : ' times');
+    if (o === 'achieved' || o === 'failed' || o === 'discarded') return o + (o === 'failed' && tp.length > 1 ? ' (' + tp.join(' → ') + ')' : '');
+    return '';
+  }
   function taskRow(t) {
     var li = el('li', 'orch-task'); li.setAttribute('data-tid', String(t.id));
     var r1 = el('div', 'orch-tr1');
@@ -573,8 +589,10 @@
     if (t.ran_s != null) r2.appendChild(el('span', 'orch-ran tnum', 'ran ' + fmtDur(t.ran_s)));
     if (t.new_tokens != null) r2.appendChild(el('span', 'orch-tok tnum', fmtN(t.new_tokens) + ' tok'));
     if (arr(t.depends_on).length) r2.appendChild(el('span', 'orch-deps', 'after ' + clip(arr(t.depends_on).join(', '), 120)));
-    if (t.waiting_for_human) { var w = el('span', 'orch-wait', 'waiting for you'); r2.appendChild(w); }
+    if (t.cost_usd != null && num(t.cost_usd) > 0) r2.appendChild(el('span', 'orch-tok tnum', fmtUsd(num(t.cost_usd))));
+    if (t.waiting_for_human) { var w = el('span', 'orch-wait', 'waiting for you' + (t.waiting_s != null ? ' ' + fmtDur(t.waiting_s) : '')); r2.appendChild(w); }
     li.appendChild(r2);
+    var ow = outcomeWord(t); if (ow) li.appendChild(el('div', 'orch-out orch-out-' + clip(t.outcome, 20), ow));
     if (t.check_summary) li.appendChild(el('div', 'orch-chk', clip(t.check_summary, 800)));
     if (t.error) li.appendChild(el('div', 'orch-err', clip(t.error, 800)));
     return li;

@@ -269,10 +269,15 @@ function finalNames(visible, rank) {
 //   .budget.running           count of tasks.json entries with status 'running'
 //   .tasks_total/done/failed  tasks.json status counts ('done' / 'failed')
 //   .approvals_pending        approvals/A-<n>.json with status 'pending'
+//   .outcome                  {merged: tasks done, discarded: tasks failed+cancelled, tokens_per_accepted: usage.new_tokens/merged|null,
+//                             cost_usd: usage.notional_usd, waiting_s/waiting_on: age of the oldest pending approval (requested_at) or plan
+//                             awaiting approval (orch.plan_awaiting_since_ms, else updated_at); null/null when nothing waits}
+//   GoalDetail.tasks[].outcome achieved|retried|escalated|failed|discarded|waiting|in_progress|pending, .retries (counted attempts - 1),
+//                             .tier_path (tiers in attempt order, deduped), .cost_usd (sum of attempt notional_usd), .waiting_s
 //   .workers                  agents currently running whose hook events carry gid == goal id (added from the live fold)
 //   GoalDetail.criteria       goal.success_criteria {id,text,met}    .tasks[]  tasks.json: phase=orch.phase, tier=orch.model_tier,
 //                             branch=orch.branch, ran_s=sum(orch.attempt_log durations), new_tokens=orch.tokens.new (else sum of attempts),
-//                             check_summary='checking'|'checks passed'|'checks failed'|null from phase / last attempt checks_ok,
+//                             check_summary='checking'|'checks passed'|'checks failed'|null (same words as the control server) from phase / last attempt checks_ok,
 //                             waiting_for_human = status 'needs_review' or a pending approval for the task,
 //                             error = orch.last_failure kind+note (scrubbed), only when the task is not done
 //   .last_events              the 25 newest lines of events.ndjson, oldest first (same order as state.events): {type, ts, task_id, text}
@@ -321,11 +326,11 @@ function eventView(e) {
   for (const k of EVENT_KEYS) { const v = d[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') parts.push((k === 'reason' || k === 'error' || k === 'msg' || k === 'title' ? '' : k + '=') + scrub(v, 100)); if (parts.length >= 4) break; }
   return { type: ctl(e.type, 60), ts: isoOrNull(e.ts), task_id: typeof e.task_id === 'string' && TAG_RE.test(e.task_id) ? e.task_id : null, text: parts.join(' ').slice(0, 160) };
 }
-function pendingApprovals(dir, dst) { // -> {sig, ids: Array of task ids with a pending request}
+function pendingApprovals(dir) { // -> Array of {task_id, ts(ms)} for pending requests
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => /^A-\d{1,6}\.json$/.test(n)).slice(0, APPROVALS_MAX); } catch { return []; }
   const out = [];
-  for (const n of names) { const f = path.join(dir, n), a = readJsonSafe(f, statOrNull(f)); if (a && typeof a === 'object' && a.status === 'pending') out.push(typeof a.task_id === 'string' && TAG_RE.test(a.task_id) ? a.task_id : ''); }
+  for (const n of names) { const f = path.join(dir, n), a = readJsonSafe(f, statOrNull(f)); if (a && typeof a === 'object' && a.status === 'pending') out.push({ task_id: typeof a.task_id === 'string' && TAG_RE.test(a.task_id) ? a.task_id : '', ts: Date.parse(a.requested_at) || (statOrNull(f) || {}).mtimeMs || null }); }
   return out;
 }
 
@@ -346,6 +351,18 @@ function loadGoalEntry(id) {
   e.sig = e.gsig + '|' + e.tsig + '|' + e.esig + '|' + e.asig;
   return e;
 }
+// Outcome roll-up, all derived from existing state: merged = tasks integrated (status done), discarded = work that never reached the integration
+// branch (failed + cancelled); tokens_per_accepted = orch.usage.new_tokens / merged (null until one is merged); cost_usd = orch.usage.notional_usd;
+// waiting_s = age of the oldest pending approval or of a plan awaiting approval (null when nothing waits on a human).
+function goalOutcome(g, e, now) {
+  const o = objOr(g.orch), U = objOr(o.usage), T = e.tasks, merged = T.filter((t) => t.status === 'done').length;
+  const plan = o.plan_state === 'awaiting_approval' && g.status === 'draft' ? (Number.isFinite(o.plan_awaiting_since_ms) ? o.plan_awaiting_since_ms : Date.parse(g.updated_at) || null) : null;
+  const since = [plan, ...e.pending.map((p) => p.ts)].filter((x) => Number.isFinite(x));
+  const oldest = since.length ? Math.min(...since) : null;
+  return { merged, discarded: T.filter((t) => t.status === 'failed' || t.status === 'cancelled').length,
+    tokens_per_accepted: merged ? Math.round(nn(U.new_tokens) / merged) : null, cost_usd: Math.round(nn(U.notional_usd) * 1e4) / 1e4,
+    waiting_s: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)), waiting_on: oldest === null ? null : plan !== null && plan === oldest ? 'plan' : 'approval' };
+}
 function summaryOf(id, e, now) {
   const g = e.goal, o = objOr(g.orch), B = objOr(o.budgets), U = objOr(o.usage), GB = objOr(g.budget), T = e.tasks;
   const startedMs = Number.isFinite(o.started_ms) ? o.started_ms : null, status = ctl(g.status, 20) || 'unknown';
@@ -359,19 +376,26 @@ function summaryOf(id, e, now) {
       max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
     tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
     approvals_pending: e.pending.length, blocked_reason: g.blocked_reason ? scrub(g.blocked_reason, 200) : null,
+    outcome: goalOutcome(g, e, now),
   };
 }
 function taskView(t, e, now) {
   const o = objOr(t.orch), log = Array.isArray(o.attempt_log) ? o.attempt_log.filter((a) => a && typeof a === 'object') : [], last = log[log.length - 1];
   let ran = 0, tok = 0;
   for (const a of log) { const s = Date.parse(a.started_at); if (Number.isFinite(s)) { const en = a.ended_at ? Date.parse(a.ended_at) : (t.status === 'running' ? now : s); if (Number.isFinite(en)) ran += Math.max(0, en - s); } tok += nn(a.new_tokens); }
+  const counted = log.filter((a) => a.counted !== false).length, tierPath = log.map((a) => ctl(a.tier, 20)).filter((x, i, l) => x && x !== l[i - 1]);
+  const retries = Math.max(0, counted - 1), mine = e.pending.filter((p) => p.task_id === t.id).map((p) => p.ts).filter((x) => Number.isFinite(x));
+  const outcome = t.status === 'done' ? (tierPath.length > 1 ? 'escalated' : retries > 0 ? 'retried' : 'achieved') : t.status === 'failed' ? 'failed' : t.status === 'cancelled' ? 'discarded'
+    : t.status === 'needs_review' || mine.length ? 'waiting' : t.status === 'running' || t.status === 'ready' ? 'in_progress' : 'pending';
   const check = o.phase === 'checking' ? 'checking' : last && last.checks_ok === true ? 'checks passed' : last && last.checks_ok === false ? 'checks failed' : t.status === 'done' ? 'checks passed' : null;
   const lf = objOr(o.last_failure);
   return { id: t.id, title: ctl(t.title, 120), status: ctl(t.status, 20), phase: o.phase ? ctl(o.phase, 20) : null, tier: o.model_tier ? ctl(o.model_tier, 20) : null,
     depends_on: (Array.isArray(t.depends_on) ? t.depends_on : []).filter((d) => typeof d === 'string' && TAG_RE.test(d)).slice(0, 50),
     attempts: nn(t.attempts), max_attempts: nn(t.max_attempts), branch: typeof o.branch === 'string' ? ctl(o.branch, 100) : null, ran_s: Math.round(ran / 1000),
     new_tokens: o.tokens && Number.isFinite(o.tokens.new) ? nn(o.tokens.new) : tok, check_summary: check,
-    waiting_for_human: t.status === 'needs_review' || e.pending.includes(t.id),
+    outcome, retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
+    waiting_s: mine.length ? Math.max(0, Math.round((now - Math.min(...mine)) / 1000)) : null,
+    waiting_for_human: t.status === 'needs_review' || mine.length > 0 || e.pending.some((p) => p.task_id === t.id),
     ...(t.status !== 'done' && lf.kind ? { error: scrub(`${lf.kind}${lf.note ? ': ' + lf.note : ''}`, 160) } : {}) };
 }
 // refreshes the cached view (at most one directory scan per second)
@@ -841,7 +865,7 @@ const server = http.createServer((req, res) => {
       let id; try { id = decodeURIComponent(pathname.slice('/api/goals/'.length)); } catch { return send(res, 400, { error: 'bad id' }); }
       if (!GID_RE.test(id)) return send(res, 404, { error: 'not found' });
       const d = goalDetail(id);
-      return d ? send(res, 200, withWorkers([d], build().agents)[0]) : send(res, 404, { error: 'not found' });
+      return d ? send(res, 200, { goal: withWorkers([d], build().agents)[0] }) : send(res, 404, { error: 'not found' });
     }
     if (pathname === '/api/control') { req.resume(); return send(res, 405, { ok: false, error: 'monitor is read-only' }); }
     if (pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
