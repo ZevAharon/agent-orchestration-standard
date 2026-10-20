@@ -38,7 +38,7 @@ Then start a new Claude Code session and open http://127.0.0.1:4318 (the page is
 
 ## GOALS panel
 
-The GOALS panel only displays goals from the separate, experimental orchestrator, read from disk, but approving, pausing and starting goals needs the control server from [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) (`aos-orch serve`, port 4319). Without it the panel is read-only. The files the dashboard reads are described in [docs/orch-state-contract.md](docs/orch-state-contract.md).
+The GOALS button and the "Needs you" badge stay hidden until a goal exists or the control server answers on 4319. The GOALS panel only displays goals from the separate, experimental orchestrator, read from disk, but approving, pausing and starting goals needs the control server from [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) (`aos-orch serve`, port 4319). Without it the panel is read-only. The files the dashboard reads are described in [docs/orch-state-contract.md](docs/orch-state-contract.md).
 
 ## Docs
 
