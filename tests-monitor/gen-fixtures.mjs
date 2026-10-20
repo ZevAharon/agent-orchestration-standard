@@ -57,4 +57,9 @@ fs.writeFileSync(path.join(wait, 'approvals', 'A-1.json'), JSON.stringify({ id: 
 const plan = path.join(OUT, 'plan', 'goals', 'g-plan'); fs.rmSync(path.join(OUT, 'plan'), { recursive: true, force: true }); fs.cpSync(esc, plan, { recursive: true });
 g = JSON.parse(fs.readFileSync(path.join(plan, 'goal.json'), 'utf8')); g.id = 'g-plan'; g.status = 'draft'; g.orch.plan_state = 'awaiting_approval'; g.orch.plan_awaiting_since_ms = 0;
 fs.writeFileSync(path.join(plan, 'goal.json'), JSON.stringify(g, null, 2) + '\n');
+// scope: escalation whose first attempt was rejected for touching files outside path_scope (engine: attempt_log outcome 'scope_violation'; hand-derived, shape from engine.mjs _failAttempt)
+const scope = path.join(OUT, 'scope', 'goals', 'g-scope'); fs.rmSync(path.join(OUT, 'scope'), { recursive: true, force: true }); fs.cpSync(esc, scope, { recursive: true });
+g = JSON.parse(fs.readFileSync(path.join(scope, 'goal.json'), 'utf8')); g.id = 'g-scope'; fs.writeFileSync(path.join(scope, 'goal.json'), JSON.stringify(g, null, 2) + '\n');
+const st = JSON.parse(fs.readFileSync(path.join(scope, 'tasks.json'), 'utf8')); st[0].orch.attempt_log[0].outcome = 'scope_violation'; st[0].orch.attempt_log[0].checks_ok = null;
+fs.writeFileSync(path.join(scope, 'tasks.json'), JSON.stringify(st, null, 2) + '\n');
 console.log('fixtures written to', OUT);

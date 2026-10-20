@@ -278,6 +278,7 @@ function finalNames(visible, rank) {
 //                             awaiting approval (orch.plan_awaiting_since_ms, else updated_at); null/null when nothing waits}
 //   GoalDetail.tasks[].outcome achieved|retried|escalated|failed|discarded|waiting|in_progress|pending, .retries (counted attempts - 1),
 //                             .tier_path (tiers in attempt order, deduped), .cost_usd (sum of attempt notional_usd), .waiting_s
+//   .out_of_scope_count       tasks with >=1 attempt_log entry of outcome 'scope_violation'   GoalDetail.tasks[].out_of_scope/.scope_violations  that flag / the count of such attempts
 //   .workers                  agents currently running whose hook events carry gid == goal id (added from the live fold)
 //   GoalDetail.criteria       goal.success_criteria {id,text,met}    .tasks[]  tasks.json: phase=orch.phase, tier=orch.model_tier,
 //                             branch=orch.branch, ran_s=sum(orch.attempt_log durations), new_tokens=orch.tokens.new (else sum of attempts),
@@ -368,6 +369,8 @@ function goalOutcome(g, e, now) {
     tokens_per_accepted: merged ? Math.round(nn(U.new_tokens) / merged) : null, cost_usd: Math.round(nn(U.notional_usd) * 1e4) / 1e4,
     waiting_s: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)), waiting_on: oldest === null ? null : plan !== null && plan === oldest ? 'plan' : 'approval' };
 }
+// engine records a scope violation as attempt_log outcome 'scope_violation' (changed files outside path_scope; the attempt fails and is escalated)
+const scopeViolations = (t) => (Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : []).filter((a) => a && typeof a === 'object' && a.outcome === 'scope_violation').length;
 const isRerun = (t) => { const log = Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : [], l = log[log.length - 1]; return !TERMINAL_TASK.has(t.status) && !!l && typeof l === 'object' && l.outcome === 'rate_limited'; };
 function summaryOf(id, e, now) {
   const g = e.goal, o = objOr(g.orch), B = objOr(o.budgets), U = objOr(o.usage), GB = objOr(g.budget), T = e.tasks;
@@ -378,7 +381,7 @@ function summaryOf(id, e, now) {
     created_at: isoOrNull(g.created_at), updated_at: isoOrNull(g.updated_at),
     plan_state: o.plan_state === 'supplied' ? 'planning' : PLAN_STATES.has(o.plan_state) ? o.plan_state : 'none',
     paused_reason: o.paused_reason ? scrub(o.paused_reason, 160) : null, resume_at: isoOrNull(o.resume_at),
-    limit_paused: typeof o.paused_reason === 'string' && /plan limit|utili[sz]ation/i.test(o.paused_reason), rerun_count: T.filter((t) => isRerun(t)).length,
+    limit_paused: typeof o.paused_reason === 'string' && /plan limit|utili[sz]ation/i.test(o.paused_reason), rerun_count: T.filter((t) => isRerun(t)).length, out_of_scope_count: T.filter((t) => scopeViolations(t) > 0).length,
     budget: { max_new_tokens: nn(B.max_new_tokens), used_new_tokens: nn(U.new_tokens), max_wall_s: nn(GB.max_wall_clock_s), used_wall_s: startedMs === null ? 0 : Math.max(0, Math.round((endMs - startedMs) / 1000)),
       max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
     tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
@@ -400,7 +403,7 @@ function taskView(t, e, now) {
     depends_on: (Array.isArray(t.depends_on) ? t.depends_on : []).filter((d) => typeof d === 'string' && TAG_RE.test(d)).slice(0, 50),
     attempts: nn(t.attempts), max_attempts: nn(t.max_attempts), branch: typeof o.branch === 'string' ? ctl(o.branch, 100) : null, ran_s: Math.round(ran / 1000),
     new_tokens: o.tokens && Number.isFinite(o.tokens.new) ? nn(o.tokens.new) : tok, check_summary: check,
-    outcome, rerun: isRerun(t), retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
+    outcome, rerun: isRerun(t), out_of_scope: scopeViolations(t) > 0, scope_violations: scopeViolations(t), retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
     waiting_s: mine.length ? Math.max(0, Math.round((now - Math.min(...mine)) / 1000)) : null,
     waiting_for_human: t.status === 'needs_review' || mine.length > 0 || e.pending.some((p) => p.task_id === t.id),
     ...(t.status !== 'done' && lf.kind ? { error: scrub(`${lf.kind}${lf.note ? ': ' + lf.note : ''}`, 160) } : {}) };
@@ -455,6 +458,8 @@ const tierCheck = (gid, tid, served) => {
   const a = modelFam(tier), b = modelFam(served);
   return { requested_tier: tier, ...(a && b && a !== b ? { model_mismatch: true } : {}) };
 };
+// orchestrator worker whose task had an attempt rejected for touching files outside its declared path_scope (only tagged workers have a scope; others never get the flag)
+const scopeCheck = (gid, tid) => { const e = gid && tid ? goalsIndex().byId.get(gid) : null, t = e && e.tasks.find((x) => x && x.id === tid); return t && scopeViolations(t) > 0 ? { out_of_scope: true } : {}; };
 const withWorkers = (list, agents) => { const n = new Map(); for (const a of agents) if (a.goal_id && a.status === 'running') n.set(a.goal_id, (n.get(a.goal_id) || 0) + 1); return list.map((g) => ({ ...g, workers: n.get(g.id) || 0 })); };
 
 // ---------- fold ----------
@@ -659,7 +664,7 @@ function fold(list, ref) {
       status: ek ? 'errored' : running ? 'running' : 'idle', error_kind: ek, recent_failures: recentF(s, ref), current_task: null, last_event_at: iso(s.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(s.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(s.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
-      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...tierCheck(s.gid, s.tid, u.model || s.mdl), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
+      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...tierCheck(s.gid, s.tid, u.model || s.mdl), ...scopeCheck(s.gid, s.tid), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
   }
   for (const sub of subs.values()) {
     if (!subLive(sub)) continue;
@@ -672,7 +677,7 @@ function fold(list, ref) {
       current_task: open ? 't-' + sub.id : null, last_event_at: iso(sub.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(sub.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(sub.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
-      started_at: iso(sub.start), ended_at: sub.done ? iso(sub.endMs) : silent ? iso(sub.last) : null, ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(ps.gid ? { goal_id: ps.gid, ...(ps.tid ? { task_id: ps.tid } : {}), ...(goalTitle(ps.gid) ? { goal_title: goalTitle(ps.gid) } : {}) } : {}), });
+      started_at: iso(sub.start), ended_at: sub.done ? iso(sub.endMs) : silent ? iso(sub.last) : null, ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(ps.gid ? { goal_id: ps.gid, ...(ps.tid ? { task_id: ps.tid } : {}), ...scopeCheck(ps.gid, ps.tid), ...(goalTitle(ps.gid) ? { goal_title: goalTitle(ps.gid) } : {}) } : {}), });
     tasks.push({ id: 't-' + sub.id, goal_id: GOAL_ID, title: sub.title, assignee: sub.id, status: sub.done && sub.failed ? 'failed' : running ? 'running' : silent ? 'stalled' : 'done',
       depends_on: [], attempts: 1, max_attempts: 1, inputs: {}, output_contract: 'n/a (observed)', acceptance: ['Observed'],
       artifacts: [], created_at: sub.ts, updated_at: iso(sub.last) });

@@ -384,3 +384,4 @@ table.ev{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed
 }
 
 .mm-badge{border-color:rgb(var(--stalled-rgb)/.6);color:var(--stalled);margin:0 0 0 8px}
+.oos-badge{border-color:rgb(var(--stalled-rgb)/.6);color:var(--stalled);margin:0 0 0 8px;text-transform:uppercase}

@@ -1226,6 +1226,7 @@
     var a = agentById(id), ml = a && a.model_label ? String(a.model_label) : '', tn = toolName(a), t = a && a.current_tool, rn = a ? ranTxt(a) : '';
     if (!a || (!tn && !ml && !rn)) return null;
     if (a.model_mismatch) ml = (ml || 'model') + ' (asked ' + a.requested_tier + ')';
+    if (a.out_of_scope) ml = (ml ? ml + ' · ' : '') + 'OUT OF SCOPE';
     return [tn ? tn + (t && t.summary ? ' · ' + trunc(baseName(t.summary), 44) : '') : 'no active tool', (ml || '') + (rn ? (ml ? ' · ' : '') + rn : '')];
   }
   function showTip(g, id) {
@@ -1534,6 +1535,7 @@
       title.textContent = a.id;
       var p = el('p', 'dr-pills'); p.appendChild(pill(a.status));
       if (a.model_mismatch) { var mb = el('span', 'tag mm-badge', 'asked ' + a.requested_tier + ', got ' + (a.model_label || a.model || '?')); mb.title = 'The orchestrator requested the ' + a.requested_tier + ' tier for this task but a different model was served'; p.appendChild(mb); }
+      if (a.out_of_scope) { var sb = el('span', 'tag oos-badge', 'out of scope'); sb.title = 'An attempt at this task changed files outside its declared path_scope and was rejected by the orchestrator'; p.appendChild(sb); }
       body.appendChild(p);
       if (a.role) { var rp = el('p', null, a.role); rp.style.overflowWrap = 'anywhere'; body.appendChild(rp); }
       kv(body, [['Full id', a.id]].concat(a.model_label ? [['Model', a.model_label + (a.model && a.model !== a.model_label ? ' (' + a.model + ')' : '')]] : [], [['Current task', a.current_task || 'none'], ['Can delegate', a.can_delegate ? 'yes' : 'no'], ['Last event', fmtTs(a.last_event_at) || 'n/a']]));

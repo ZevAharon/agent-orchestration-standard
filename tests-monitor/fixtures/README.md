@@ -9,6 +9,7 @@ Each `<name>/goals/<gid>/` is a real orchestrator goal dir (only the files the m
 | `escalation` | `g-esc` | haiku fails checks, sonnet succeeds, achieved |
 | `failed` | `g-fail` | t1 fails on every tier, t2 never runs |
 | `waiting` | `g-wait` | `escalation` + pending approval A-1 (placeholder `requested_at`; the test rewrites it) |
+| `scope` | `g-scope` | `escalation` whose first attempt has `outcome: scope_violation` (changed files outside `path_scope`) |
 | `plan` | `g-plan` | `escalation` as a draft awaiting plan approval (`plan_awaiting_since_ms: 0`; the test rewrites it) |
 
 Regenerate (only while `./orchestrator` exists; uses the fake claude, never a real one):

@@ -440,6 +440,7 @@
     var why = [];
     if (g.paused_reason) why.push(clip(g.paused_reason, 160));
     var rs = fmtResume(g.resume_at); if (rs) why.push(rs);
+    if (num(g.out_of_scope_count) > 0) { var oc = el('span', 'orch-oos tnum', num(g.out_of_scope_count) + ' out of scope'); oc.title = 'Tasks with an attempt rejected for changing files outside their path_scope'; r2.appendChild(oc); }
     if (g.limit_paused) b.appendChild(el('span', 'orch-why orch-limit', limitText(g) + (num(g.rerun_count) ? ' · ' + g.rerun_count + ' to rerun' : '')));
     else if (why.length) b.appendChild(el('span', 'orch-why', why.join(' · ')));
     b.addEventListener('click', function () { goDetail(g.id); });
@@ -608,6 +609,7 @@
     if (t.new_tokens != null) r2.appendChild(el('span', 'orch-tok tnum', fmtN(t.new_tokens) + ' tok'));
     if (arr(t.depends_on).length) r2.appendChild(el('span', 'orch-deps', 'after ' + clip(arr(t.depends_on).join(', '), 120)));
     if (t.cost_usd != null && num(t.cost_usd) > 0) r2.appendChild(el('span', 'orch-tok tnum', fmtUsd(num(t.cost_usd))));
+    if (t.out_of_scope) { var os = el('span', 'orch-oos', 'out of scope' + (num(t.scope_violations) > 1 ? ' \u00d7' + t.scope_violations : '')); os.title = 'An attempt changed files outside this task\'s path_scope and was rejected'; r2.appendChild(os); }
     if (t.waiting_for_human) { var w = el('span', 'orch-wait', 'waiting for you' + (t.waiting_s != null ? ' ' + fmtDur(t.waiting_s) : '')); r2.appendChild(w); }
     li.appendChild(r2);
     var ow = outcomeWord(t); if (ow) li.appendChild(el('div', 'orch-out orch-out-' + clip(t.outcome, 20), ow));

@@ -128,3 +128,4 @@ fieldset.orch-field{border:0;padding:0;margin:0;min-width:0}
 .orch-limit-banner{margin:8px 0;padding:10px 12px;border:1px solid rgb(var(--stalled-rgb)/.55);border-left-width:3px;border-radius:8px;background:rgb(var(--stalled-rgb)/.1);color:var(--text)}
 .orch-limit-banner strong{display:block;font-size:13px;color:var(--stalled)}
 .orch-rerun{margin:4px 0 0;padding-left:18px;font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
+.orch-oos{font:700 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--stalled);border:1px solid rgb(var(--stalled-rgb)/.6);padding:2px 5px;border-radius:2px}

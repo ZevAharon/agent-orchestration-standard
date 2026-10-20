@@ -45,10 +45,10 @@ the goal's repo (`orch.repo` basename) instead of the worktree, and count `worke
 - `GET /api/state` also carries `goals` (max 20 summaries); replay (`?at=`) omits `goals`.
 - GoalSummary: `id, title, status, repo_name, created_at, updated_at, plan_state, paused_reason, resume_at, blocked_reason,
   budget{max_new_tokens,used_new_tokens,max_wall_s,used_wall_s,max_parallel,running,max_attempts}, tasks_total, tasks_done,
-  tasks_failed, approvals_pending, limit_paused, rerun_count, workers, outcome{merged,discarded,tokens_per_accepted,cost_usd,waiting_s,waiting_on}`.
+  tasks_failed, approvals_pending, limit_paused, rerun_count, out_of_scope_count, workers, outcome{merged,discarded,tokens_per_accepted,cost_usd,waiting_s,waiting_on}`.
 - GoalDetail = summary + `description, criteria[{id,text,met}], last_events[{type,ts,task_id,text}], tasks[{id,title,status,phase,
   tier,depends_on,attempts,max_attempts,branch,ran_s,new_tokens,check_summary,outcome,retries,tier_path,cost_usd,waiting_s,
-  waiting_for_human,rerun,error?}]`. `limit_paused` = `paused_reason` is a plan-limit pause (`plan limit...` / `...utilisation...`); `rerun` = task not done/failed/cancelled whose newest `attempt_log` entry has `outcome: rate_limited` (uncounted, requeued by the engine); `rerun_count` counts them. No absolute path appears in any response.
+  waiting_for_human,rerun,out_of_scope,scope_violations,error?}]`. `out_of_scope` = the task has at least one `attempt_log` entry with `outcome: scope_violation` (the engine's snapshot check found changed files outside the task's `path_scope`; the attempt fails and escalates; also logged as event `orch.check.failed` with `reason: scope_violation`); `scope_violations` counts those entries; `out_of_scope_count` counts such tasks per goal. Tagged workers (agents with `goal_id`+`task_id`) of such a task carry `out_of_scope: true` in `/api/state`. Ordinary sessions have no declared scope and never get the flag. `limit_paused` = `paused_reason` is a plan-limit pause (`plan limit...` / `...utilisation...`); `rerun` = task not done/failed/cancelled whose newest `attempt_log` entry has `outcome: rate_limited` (uncounted, requeued by the engine); `rerun_count` counts them. No absolute path appears in any response.
 
 ## Tests
 
