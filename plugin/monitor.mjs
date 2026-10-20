@@ -254,7 +254,7 @@ function finalNames(visible, rank) {
 }
 
 // ---------- orchestrator goals (READ-ONLY view of the engine's per-goal directories) ----------
-// Source: ${AOS_ORCH_DIR || (CLAUDE_PLUGIN_DATA || ~/.claude/plugins/data/aos-dashboard-aos-local)/orch}/goals/<goal-id>/
+// Source: ${AOS_ORCH_DIR || both (${XDG_STATE_HOME/aos | ~/.aos}/orch, legacy ${CLAUDE_PLUGIN_DATA || ~/.claude/plugins/data/aos-dashboard-aos-local}/orch)}/goals/<goal-id>/
 // Field mapping (engine file -> API). Nothing is ever written; no full path leaves this process (repo is reduced to its basename,
 // free text is scrubbed of absolute paths and token-like strings).
 //   GoalSummary.id            dir name (== goal.json id)             .title/.description  goal.json title/description (cleaned, capped)
@@ -292,9 +292,13 @@ function finalNames(visible, rank) {
 //   .last_events              the 25 newest lines of events.ndjson, oldest first (same order as state.events): {type, ts, task_id, text}
 // Replay (?at=): goals are NOT time-sliced; replayed /api/state omits the `goals` key. Agent tags and goal-based project grouping
 // still come from the (time-sliced) events.
-const ORCH = process.env.AOS_ORCH_DIR ? path.resolve(process.env.AOS_ORCH_DIR)
-  : path.join(process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.claude', 'plugins', 'data', 'aos-dashboard-aos-local'), 'orch');
-const GOALS_DIR = path.join(ORCH, 'goals');
+// State dirs (all read-only, never created): AOS_ORCH_DIR if set; otherwise BOTH the orchestrator's default dir
+// ($XDG_STATE_HOME/aos/orch if XDG_STATE_HOME is set, else ~/.aos/orch) and the legacy <plugin data>/orch. Goals from both are merged,
+// deduped by goal id; the copy with the newer heartbeat (goal.json mtime) wins.
+const ORCH_ROOTS = process.env.AOS_ORCH_DIR ? [path.resolve(process.env.AOS_ORCH_DIR)] : [...new Set([
+  path.join(process.env.XDG_STATE_HOME ? path.resolve(process.env.XDG_STATE_HOME) : path.join(os.homedir(), '.aos'), ...(process.env.XDG_STATE_HOME ? ['aos'] : []), 'orch'),
+  path.join(process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.claude', 'plugins', 'data', 'aos-dashboard-aos-local'), 'orch')])];
+const GOALS_DIRS = ORCH_ROOTS.map((r) => path.join(r, 'goals'));
 const GOAL_READ_MAX = 50, STATE_GOALS_MAX = 20, GOAL_DIRS_SCAN_MAX = 5000, FILE_MAX = 2 * 1024 * 1024, EVENT_TAIL_BYTES = 256 * 1024, DETAIL_EVENTS = 25, TASKS_MAX = 200, APPROVALS_MAX = 200;
 const GID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, TAG_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const PLAN_STATES = new Set(['planning', 'awaiting_approval', 'approved', 'rejected', 'none']);
@@ -347,9 +351,9 @@ function pendingApprovals(dir) { // -> Array of {task_id, ts(ms)} for pending re
 const goalEntries = new Map(); // id -> { sig, goal, tasks, pending, events, gsig, tsig, esig, asig }
 let goalsView = { list: [], byId: new Map(), sig: '' };
 let goalsScanAt = 0;
-function loadGoalEntry(id) {
-  const dir = path.join(GOALS_DIR, id);
-  let e = goalEntries.get(id);
+function loadGoalEntry(id, gdir) {
+  const dir = path.join(gdir, id), ck = dir;
+  let e = goalEntries.get(ck);
   const gst = statOrNull(path.join(dir, 'goal.json')), tst = statOrNull(path.join(dir, 'tasks.json')), est = statOrNull(path.join(dir, 'events.ndjson')), ast = statOrNull(path.join(dir, 'approvals'));
   const gs = sigOf(gst), ts = sigOf(tst), es = sigOf(est), as = sigOf(ast);
   if (!e) e = { goal: null, tasks: [], pending: [], events: [], gsig: '', tsig: '', esig: '', asig: '' };
@@ -432,17 +436,21 @@ function goalsIndex() {
   if (now - goalsScanAt < 1000) return goalsView;
   goalsScanAt = now;
   try {
-    let names = [];
-    try { names = fs.readdirSync(GOALS_DIR).slice(0, GOAL_DIRS_SCAN_MAX).filter((n) => GID_RE.test(n)); } catch { names = []; }
-    const cand = [];
-    for (const n of names) { try { const d = path.join(GOALS_DIR, n); if (fs.lstatSync(d).isDirectory()) { const st = statOrNull(path.join(d, 'goal.json')); if (st) cand.push({ n, m: st.mtimeMs }); } } catch {} }
+    const best = new Map(); // id -> { n, m, gd }: newest heartbeat across the state dirs
+    for (const gd of GOALS_DIRS) {
+      let names = [];
+      try { names = fs.readdirSync(gd).slice(0, GOAL_DIRS_SCAN_MAX).filter((n) => GID_RE.test(n)); } catch { names = []; }
+      for (const n of names) { try { const d = path.join(gd, n); if (fs.lstatSync(d).isDirectory()) { const st = statOrNull(path.join(d, 'goal.json')); const o = best.get(n); if (st && (!o || st.mtimeMs > o.m)) best.set(n, { n, m: st.mtimeMs, gd }); } } catch {} }
+    }
+    const cand = [...best.values()];
     cand.sort((a, b) => b.m - a.m || (a.n < b.n ? -1 : 1));
     const keep = new Map(), byId = new Map(), list = [];
     let sig = '';
-    for (const { n } of cand.slice(0, GOAL_READ_MAX)) {
-      let e = null; try { e = loadGoalEntry(n); } catch { e = null; }
+    for (const { n, gd } of cand.slice(0, GOAL_READ_MAX)) {
+      let e = null; try { e = loadGoalEntry(n, gd); } catch { e = null; }
       if (!e) continue;
-      goalEntries.set(n, e); keep.set(n, e); sig += n + '=' + e.sig + ';';
+      const ck = path.join(gd, n);
+      goalEntries.set(ck, e); keep.set(ck, e); sig += n + '=' + e.sig + ';';
       list.push(n); byId.set(n, e);
     }
     for (const k of [...goalEntries.keys()]) if (!keep.has(k)) goalEntries.delete(k);
