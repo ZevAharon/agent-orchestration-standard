@@ -349,4 +349,11 @@ assert.equal(cleanup({ write: (s) => w.push(s) }, fakeStdin), true);
 assert.ok(w.join('').includes('\x1b[?25h') && w.join('').includes('\x1b[?1049l'));
 assert.equal(fakeStdin.raw, false);
 assert.equal(cleanup({ write: (s) => w.push(s) }, fakeStdin), false, 'idempotent');
+// ---- requested vs served model marker
+{
+  const f = fixture(2); f.agents[1].model_mismatch = true; f.agents[1].requested_tier = 'haiku';
+  const m = renderModel(f, 100, 30, { list: true });
+  assert.ok(m.plain.join('\n').includes('!haiku'), 'list row shows the requested tier on a model mismatch');
+  assert.ok(!renderModel(fixture(2), 100, 30, { list: true }).plain.join('\n').includes('!haiku'));
+}
 console.log(`ok (${ringCases} ring cases, ${listCases} list fallbacks)`);

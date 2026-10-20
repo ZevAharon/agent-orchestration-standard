@@ -440,6 +440,14 @@ function goalDetail(id) {
 // repo roots stay internal: used only to group tagged workers under the goal's project
 const goalRepo = (id) => { const e = goalsIndex().byId.get(id); return e && typeof e.goal.orch?.repo === 'string' && path.isAbsolute(e.goal.orch.repo) ? e.goal.orch.repo : null; };
 const goalTitle = (id) => { const e = goalsIndex().byId.get(id); return e ? ctl(e.goal.title, 120) : null; };
+// orchestrator worker: tier the engine requested for the task (tasks.json orch.model_tier) vs the model family actually served (transcript / SessionStart).
+// Only tiers that name a model family (opus|sonnet|haiku) are compared; mismatch is flagged only when both sides are known.
+const tierCheck = (gid, tid, served) => {
+  const e = gid && tid ? goalsIndex().byId.get(gid) : null, t = e && e.tasks.find((x) => x && x.id === tid), tier = t && t.orch && t.orch.model_tier ? ctl(t.orch.model_tier, 20) : null;
+  if (!tier) return {};
+  const a = modelFam(tier), b = modelFam(served);
+  return { requested_tier: tier, ...(a && b && a !== b ? { model_mismatch: true } : {}) };
+};
 const withWorkers = (list, agents) => { const n = new Map(); for (const a of agents) if (a.goal_id && a.status === 'running') n.set(a.goal_id, (n.get(a.goal_id) || 0) + 1); return list.map((g) => ({ ...g, workers: n.get(g.id) || 0 })); };
 
 // ---------- fold ----------
@@ -641,7 +649,7 @@ function fold(list, ref) {
       status: ek ? 'errored' : running ? 'running' : 'idle', error_kind: ek, recent_failures: recentF(s, ref), current_task: null, last_event_at: iso(s.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(s.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(s.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
-      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
+      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...tierCheck(s.gid, s.tid, u.model || s.mdl), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
   }
   for (const sub of subs.values()) {
     if (!subLive(sub)) continue;

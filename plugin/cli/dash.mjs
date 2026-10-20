@@ -95,7 +95,7 @@ function labelSegs(a, level) {
   const stSeg = [...(sp.short ? [[sp.short + ' · ', 'muted']] : []), [st.toUpperCase(), STATUS_ROLE[st] || 'idle']];
   if (typeof a.ran_s === 'number' && segW(stSeg) + len(' · ran ' + fmtDur(a.ran_s)) <= 22) stSeg.push([' · ran ' + fmtDur(a.ran_s), 'muted']); // only when it fits the label width
   L.push(stSeg);
-  if (level < 2 && a.model_label) L.push([[clip(String(a.model_label), 22), 'muted']]);
+  if (level < 2 && a.model_label) L.push([[clip((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + String(a.model_label), 22), a.model_mismatch ? 'stalled' : 'muted']]);
   return L;
 }
 const segW = (segs) => segs.reduce((n, s) => n + len(s[0]), 0);
@@ -610,7 +610,7 @@ function drawList(g, agents, cols, rows, groups = null) {
     let x = 3 + ind;
     g.put(x, y, cell(sp.name + (sp.short ? ' ' + sp.short : ''), wName - ind), 'bone'); x += wName - ind;
     g.put(x, y, cell(st.toUpperCase(), wSt), STATUS_ROLE[st] || 'idle'); x += wSt;
-    if (showModel) { g.put(x, y, cell(a.model_label || '', wMod), 'muted'); x += wMod; }
+    if (showModel) { g.put(x, y, cell((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + (a.model_label || ''), wMod), a.model_mismatch ? 'stalled' : 'muted'); x += wMod; }
     if (showTool) { const t = a.current_tool; g.put(x, y, cell(t ? t.name + (t.summary ? ' ' + t.summary : '') : '', wTool), 'text2'); x += wTool; }
     if (showRan) { g.put(x, y, rj(fmtDur(a.ran_s), wRan), 'bone'); x += wRan; }
     if (showTok) { g.put(x, y, rj(fmtN(newTok(a.usage)), wTok), 'bone'); x += wTok; }
