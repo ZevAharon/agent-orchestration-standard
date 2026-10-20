@@ -1,8 +1,8 @@
-# AOS-1: Agent Orchestration Standard
+# AOS Dashboard
 
-AOS-1 is a minimal, runtime-agnostic contract for orchestrating several AI agents toward one standing **Goal**. A periodic **Heartbeat** re-evaluates the Goal, reaps stalled work, plans, dispatches ready Tasks, and enforces budgets until the Goal is achieved, blocked, or cancelled. All state lives in plain files, and an append-only event log is the source of truth. The normative text is in the [aos-1-spec repo](https://github.com/tomtomsatnav/aos-1-spec).
+A live, read-only view of your Claude Code sessions: agents, tasks, tokens, cost, file conflicts and alerts, as a streaming graph in the browser, a terminal view (`aos-dash`), an MCP server and a status line. Local-only, zero dependencies.
 
-This repo is the **dashboard**: a read-only live view of Claude Code sessions and AOS-1 goals. The spec lives in [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec); the experimental orchestrator engine lives in [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator).
+It also shows [AOS-1](https://github.com/tomtomsatnav/aos-1-spec) goals, a small open standard for observable agent orchestration (periodic heartbeat, plain-file state, append-only event log). The spec lives in [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec); the experimental orchestrator engine lives in [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator).
 
 <p align="center">
   <a href="docs/screenshots.md"><img src="docs/hero.gif" alt="AOS live dashboard: a project graph of agents with streaming activity" width="900"></a><br>
@@ -19,7 +19,7 @@ make doctor         # checks the whole setup and tells you what to fix
 make                # lists every target
 ```
 
-Then start a new Claude Code session and open http://127.0.0.1:4318. Local-only, read-only; hooks never log prompts, file contents or tool output, but do log event and tool names, working-folder and edited-file paths, transcript paths and a redacted short task description (full list: [plugin/README.md](plugin/README.md#privacy)). Status: personal project, macOS-first. [MIT License](LICENSE).
+Then start a new Claude Code session and open http://127.0.0.1:4318. The graph's `Streams` button (or `Q`) cycles Full / Quiet / Lines; Lines draws no particles and stops per-frame redraws, for the lowest overhead ([measured](docs/overhead.md)). Local-only, read-only; hooks never log prompts, file contents or tool output, but do log event and tool names, working-folder and edited-file paths, transcript paths and a redacted short task description (full list: [plugin/README.md](plugin/README.md#privacy)). Status: personal project, macOS-first. [MIT License](LICENSE).
 
 ## GOALS panel
 
