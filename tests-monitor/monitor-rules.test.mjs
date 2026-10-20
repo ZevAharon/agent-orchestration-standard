@@ -46,3 +46,11 @@ test('hostile rules fields are bounded and cleaned', async () => {
   assert.ok(d.profile.length <= 24 && !/[\u001b]/.test(d.profile)); assert.equal(d.loosenings, 100); assert.equal(d.loosening_ids.length, 30); assert.equal(d.dropped, 0);
   assert.ok(d.loosening_ids.every((x) => !/‮/.test(x.rule_id) && /@ffffffff$/.test(x.rule_id)));
 });
+test('the chip shows the engine\'s profile_name (the chosen profile), not the compiled profile', async () => {
+  const f = path.join(TMP, 'orch', 'goals', 'g-rules', 'goal.json'); const g = JSON.parse(fs.readFileSync(f, 'utf8'));
+  g.orch.rules.profile = 'strict'; g.orch.rules.profile_name = 'docs-only'; g.orch.rules.loosenings = []; g.orch.rules.dropped = [];
+  fs.writeFileSync(f, JSON.stringify(g)); await sleep(1300);
+  assert.equal((await M.get('/api/goals/g-rules')).json.goal.rules.profile, 'docs-only');
+  delete g.orch.rules.profile_name; fs.writeFileSync(f, JSON.stringify(g)); await sleep(1300);
+  assert.equal((await M.get('/api/goals/g-rules')).json.goal.rules.profile, 'strict', 'goals recorded before profile_name fall back to profile');
+});

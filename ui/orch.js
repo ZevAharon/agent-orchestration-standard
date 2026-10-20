@@ -979,7 +979,7 @@
     if (F.draftQs.length && ans) { if (F.draftRound >= DRAFT_ROUNDS) { draftNote('orch-hint', 'Two rounds of questions are enough: edit the form below directly.'); return; } F.draftRound++; }
     var full = F.draftQs.length && ans ? prompt + '\n\nAnswers to your questions:\n' + ans : prompt;
     F.draftBtn._busy = true; applyWrite(); draftNote('orch-hint', 'Drafting\u2026');
-    creq('POST', '/api/goals/draft', { prompt: clip(full, 6000), repo: repo }).then(function (j) { F.draftBtn._busy = false; applyWrite(); showDraft(j); }, function (e) {
+    creq('POST', '/api/goals/draft', { prompt: clip(full, 4000), repo: repo }).then(function (j) { F.draftBtn._busy = false; applyWrite(); showDraft(j); }, function (e) {
       F.draftBtn._busy = false; applyWrite(); clear(F.draftOut); draftNote('orch-ferr', (e && e.message) ? e.message : 'Request failed');
     });
   }

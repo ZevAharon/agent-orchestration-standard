@@ -285,7 +285,7 @@ function finalNames(visible, rank) {
 //                             check_summary='checking'|'checks passed'|'checks failed'|null (same words as the control server) from phase / last attempt checks_ok,
 //                             waiting_for_human = status 'needs_review' or a pending approval for the task,
 //                             error = orch.last_failure kind+note (scrubbed), only when the task is not done
-//   .rules                    goal.orch.rules (the engine's rule-set snapshot summary; absent on older goals -> null): {hash (12 chars), profile, legacy, loosenings: n,
+//   .rules                    goal.orch.rules (the engine's rule-set snapshot summary; absent on older goals -> null): {hash (12 chars), profile (orch.rules.profile_name when present, else .profile), legacy, loosenings: n,
 //                             dropped: n}; GoalDetail adds layers[{layer, sha12}], loosening_ids[{rule_id, layer}] and dropped_ids[{rule_id, layer, reason}] (ids only: no rule
 //                             values and no paths; the 32-hex content binding of an id is shortened to 8 characters for display)
 //   GoalDetail.criteria[].verify/.needs_confirmation   present only on a human-review criterion: verify 'human', needs_confirmation = not yet met
@@ -381,7 +381,8 @@ const ruleId = (v) => ctl(v, 160).replace(RULE_ID_RE, '@$1');
 function rulesView(o, detail) {
   const r = objOr(o.rules); if (typeof r.hash !== 'string' || !r.hash) return null;
   const A = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
-  const out = { hash: ctl(r.hash, 12), profile: ctl(r.profile, 24) || 'strict', legacy: r.legacy === true, loosenings: A(r.loosenings).length, dropped: A(r.dropped).length };
+  // profile_name: the profile the human chose (r.profile only follows the user layer)
+  const out = { hash: ctl(r.hash, 12), profile: ctl(r.profile_name, 24) || ctl(r.profile, 24) || 'strict', legacy: r.legacy === true, loosenings: A(r.loosenings).length, dropped: A(r.dropped).length };
   if (detail) {
     out.layers = A(r.layers).slice(0, 8).map((l) => ({ layer: ctl(l.layer, 16), sha12: typeof l.sha12 === 'string' ? ctl(l.sha12, 12) : null }));
     out.loosening_ids = A(r.loosenings).slice(0, 30).map((l) => ({ rule_id: ruleId(l.rule_id), layer: ctl(l.layer, 16) }));
