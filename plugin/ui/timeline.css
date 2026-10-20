@@ -1,0 +1,13 @@
+/* waterfall timeline panel */
+.tl-panel{position:fixed;left:16px;right:16px;top:74px;bottom:16px;z-index:16;box-sizing:border-box;display:flex;flex-direction:column;background:var(--glass-strong);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 20px 50px -24px rgba(0,0,0,.6);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:var(--text-2);font:500 12px/1.5 var(--mono)}
+.tl-panel[hidden],.tl-tip[hidden]{display:none!important}
+.tl-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;flex-wrap:wrap}
+.tl-title{margin:0 8px 0 0;font:700 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--text)}
+.tl-info{flex:1 1 auto;color:var(--muted);font-size:11px}
+.tl-btn{font:600 11px/1 var(--mono);min-width:34px;min-height:30px;padding:0 10px;border:1px solid var(--line-2);border-radius:5px;background:none;color:var(--text);cursor:pointer}
+.tl-btn:hover{background:var(--hover)}
+.tl-wrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;border-top:1px solid var(--line)}
+.tl-cv{display:block;touch-action:none;cursor:grab;outline-offset:-2px}
+.tl-tip{position:absolute;max-width:260px;padding:6px 8px;border:1px solid var(--line-2);border-radius:5px;background:var(--glass-strong);color:var(--text);font-size:11px;pointer-events:none}
+.tl-key{padding:6px 14px 10px;font-size:10.5px;color:var(--muted)}
+@media (max-width:720px){.tl-panel{left:0;right:0;top:0;bottom:0;border-radius:0;border:0}.tl-btn{min-height:40px;min-width:40px}}

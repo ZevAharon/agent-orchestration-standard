@@ -477,6 +477,8 @@ function fold(list, ref) {
   const mk = (ms, type) => markers.push({ ts: new Date(ms).toISOString(), type });
   const subsRunning = (sid) => { for (const x of subs.values()) if (x.sid === sid && !x.done) return true; return false; };
   const mkTools = () => ({ pend: [], recent: [] });
+  const tickMap = new Map(); // actor label -> activity timestamps (ms, >=15 s apart, newest 300) for the timeline's heartbeat ticks
+  const tick = (label, t) => { let a = tickMap.get(label); if (!a) tickMap.set(label, a = []); if (!a.length || t - a[a.length - 1] >= 15000) { a.push(t); if (a.length > 300) a.shift(); } };
   const closeTool = (T, name, t) => {
     let i = -1; for (let j = T.pend.length - 1; j >= 0; j--) if (T.pend[j].name === name) { i = j; break; }
     const e = i >= 0 ? T.pend.splice(i, 1)[0] : null;
@@ -524,6 +526,7 @@ function fold(list, ref) {
     s.last = t;
     const sub = r.agent_id ? subs.get(sid + ':' + r.agent_id) : null;
     const actor = sub || s, label = sub ? sub.id : s.id;
+    tick(label, t);
     const wasFail = !!actor.evFail; actor.evT = t; actor.evFail = false; // last event of this actor (errored rule c)
     if (!r.agent_id) { // main session run segments: prompt/tool activity -> Stop; a silent gap longer than RUN_S ends the run (idle time not counted)
       if (s.seg !== null && t - prevLast > RUN_S * 1000) { s.closed += Math.max(0, prevLast - s.seg); s.seg = null; }
@@ -702,7 +705,7 @@ function fold(list, ref) {
 
   events.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)); events.forEach((e, i) => { e.seq = i; });
   alerts.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-  return { agents, tasks, events, alerts, collisions, cost, markers, projects };
+  return { agents, tasks, events, alerts, collisions, cost, markers, projects, tickMap };
 }
 
 function assemble(list, ref, replay) {
@@ -745,6 +748,24 @@ function buildAt(atMs) {
   let end = recs.length; while (end > 0 && Date.parse(recs[end - 1].ts) > atMs) end--;
   const v = assemble(recs.slice(Math.max(0, end - FOLD_N), end), atMs, true);
   atCache = { key, v };
+  return v;
+}
+// Timeline (waterfall): one row per agent visible at `ref` (live, or the replayed slice for ?at=), same fold as /api/state
+let tlCache = { key: '', v: null };
+function timeline(atMs) {
+  ingest();
+  const key = ingestSig + ':' + (atMs || 'live') + ':' + (atMs ? '' : Math.floor(Date.now() / 1000));
+  if (tlCache.key === key) return tlCache.v;
+  const ref = atMs || Date.now();
+  let end = recs.length; if (atMs) while (end > 0 && Date.parse(recs[end - 1].ts) > atMs) end--;
+  const f = fold(recs.slice(Math.max(0, end - FOLD_N), end), ref);
+  const rows = f.agents.filter((a) => a.started_at).map((a) => ({ id: a.id, role: ctl(a.role, 60), kind: a.capabilities && a.capabilities.length ? 'session' : 'subagent', project: a.project,
+    status: a.status, start: a.started_at, end: a.ended_at, ticks: (f.tickMap.get(a.id) || []).filter((t) => t >= Date.parse(a.started_at) && t <= ref),
+    ...(a.goal_id ? { goal_id: a.goal_id, ...(a.task_id ? { task_id: a.task_id } : {}) } : {}) }))
+    .sort((x, y) => (x.start < y.start ? -1 : x.start > y.start ? 1 : x.id < y.id ? -1 : 1)).slice(0, 300);
+  const from = rows.length ? Math.min(...rows.map((r) => Date.parse(r.start))) : ref;
+  const v = { from: new Date(from).toISOString(), to: new Date(ref).toISOString(), replay: !!atMs, rows };
+  tlCache = { key, v };
   return v;
 }
 let histCache = { key: '', v: null };
@@ -868,6 +889,12 @@ const server = http.createServer((req, res) => {
       const at = new URL(req.url, 'http://localhost').searchParams.get('at');
       if (at) { const ms = Date.parse(at); if (!Number.isFinite(ms)) return send(res, 400, { error: 'bad at' }); return send(res, 200, buildAt(ms)); }
       return send(res, 200, build());
+    }
+    if (pathname === '/api/timeline') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });
+      const at = new URL(req.url, 'http://localhost').searchParams.get('at'), ms = at ? Date.parse(at) : null;
+      if (at && !Number.isFinite(ms)) return send(res, 400, { error: 'bad at' });
+      return send(res, 200, timeline(ms));
     }
     if (pathname === '/api/history') {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });

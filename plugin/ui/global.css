@@ -84,11 +84,17 @@ body.aos-replay-open .legend,body.aos-replay-open .updated{opacity:0;pointer-eve
 }
 .aos-tl{flex:none;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:.06em;margin:0 -6px}
 
+/* header never overlaps: the goal summary shrinks (ellipsis) before it can run under the live indicator / buttons */
+.brand h1{white-space:nowrap}
+.goalbar{overflow:hidden}
+.goalbar .goal-count{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+
 /* mobile polish (<=720px): readable goal title, no clipped stats, touch-sized targets */
 @media (max-width:720px){
   .goalbar{flex-wrap:wrap;height:auto;min-height:34px;row-gap:2px;padding:2px 0}
   .goalbar .goal-title{flex:1 1 100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
-  .goalbar .goal-count{flex:1 1 auto;white-space:normal}
+  .goalbar .goal-count{flex:1 1 auto;white-space:normal;overflow:visible}
+  .goalbar{overflow:visible}
   .goalbar .segs{flex:0 1 80px;min-width:40px}
   .stats{left:auto;box-sizing:border-box;width:auto;max-width:calc(100% - 28px)}
   .stat-v{font-size:16px;min-height:20px;white-space:nowrap}

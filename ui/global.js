@@ -291,6 +291,7 @@
     var s = hms(R.t); R.time.textContent = s; R.tag.textContent = 'Replay ' + s;
     R.track.setAttribute('aria-valuetext', s);
   }
+  window.AosReplay = { at: function () { return R.open ? R.t : null; } };   /* read by timeline.js */
   function openReplay() {
     safe(function () {
       if (!R.bar || R.open) return;
