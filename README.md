@@ -1,5 +1,7 @@
 # AOS Dashboard
 
+[![CI](https://github.com/tomtomsatnav/agent-orchestration-standard/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtomsatnav/agent-orchestration-standard/actions/workflows/ci.yml)
+
 A live, read-only view of your Claude Code sessions: agents, tasks, tokens, cost, file conflicts and alerts, as a streaming graph in the browser, a terminal view (`aos-dash`), an MCP server and a status line. Local-only, zero dependencies.
 
 It also shows [AOS-1](https://github.com/tomtomsatnav/aos-1-spec) goals, a small open standard for observable agent orchestration (periodic heartbeat, plain-file state, append-only event log). The spec lives in [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec); the experimental orchestrator engine lives in [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator).

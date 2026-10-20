@@ -1,6 +1,6 @@
 # Claude Code live dashboard (plugin)
 
-Beyond the spec and the reference runner, this repo contains a read-only **live monitor for Claude Code sessions**: it shows every session, project and subagent as a graph (heart -> project hubs -> agents) with live streams, per-agent model, tokens, run time, tool feed, file conflicts, errors and alerts. It is local-only (binds 127.0.0.1) and stores only event and tool names, short labels, counts, and the local folder/file paths it needs for project grouping and file-conflict detection: never prompts, command lines (only a Bash command's first word), file contents, tool output or error messages. Full paths stay in the local log and are never shown in the dashboard, terminal view or MCP output (see [plugin/README.md](../plugin/README.md) for the exact list).
+This repo contains a read-only **live monitor for Claude Code sessions**: it shows every session, project and subagent as a graph (heart -> project hubs -> agents) with live streams, per-agent model, tokens, run time, tool feed, file conflicts, errors and alerts. It is local-only (binds 127.0.0.1) and stores only event and tool names, short labels, counts, and the local folder/file paths it needs for project grouping and file-conflict detection: never prompts, command lines (only a Bash command's first word), file contents, tool output or error messages. Full paths stay in the local log and are never shown in the dashboard, terminal view or MCP output (see [plugin/README.md](../plugin/README.md) for the exact list).
 
 | Part | Where | What |
 |---|---|---|
@@ -32,7 +32,7 @@ Then open http://127.0.0.1:4318 (the monitor starts automatically with a session
 - Replay: scrub the recorded timeline and see the graph as it was.
 - Light and dark themes with checked contrast tokens.
 - One plugin ships the hooks, the web UI, a terminal dashboard (`aos-dash`), a read-only MCP server and a macOS notifier.
-- Automated test suites for the spec validator, terminal UI, MCP server, notifier and theme contrast (`make test`).
+- Automated test suites for the terminal UI, monitor goal view, MCP server, notifier and theme contrast (`make test`).
 
 ## Debugging
 
