@@ -31,6 +31,7 @@ install: check build validate ## Install everything: build, register + install t
 	@echo "  2. Open http://127.0.0.1:$(PORT)   (or run: aos-dash)"
 	@echo "  3. Optional status line:  make statusline"
 	@echo "  4. Check everything:      make doctor"
+	@echo "Troubleshooting: aos-dash not found -> add ~/.local/bin to your PATH; empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
 	@echo "NOTE: if you previously added AOS hooks to ~/.claude/settings.json by hand, remove them (they would log every event twice)."
 
 uninstall: stop unlink statusline-off ## Remove the plugin, marketplace entry, aos-dash link and status line (your data stays)
@@ -69,7 +70,7 @@ start: ## Start the live monitor (normally automatic when a session opens)
 	@$(ENSURE); sleep 1; curl -s -o /dev/null -m 2 -w "monitor on :$(PORT): HTTP %{http_code}\n" http://127.0.0.1:$(PORT)/api/state || echo "monitor did not start: see make doctor"
 
 stop: ## Stop the live monitor
-	-@pkill -f "plugin/monitor.mjs" && echo "monitor stopped" || echo "monitor was not running"
+	-@pkill -f "plugin/monitor.mjs" && echo "monitor stopped (every AOS monitor on this machine, whatever port)" || echo "monitor was not running"
 
 restart: stop start ## Restart the monitor (needed after `make build` changes monitor.mjs)
 

@@ -706,7 +706,7 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2); const o = parseArgs(argv);
-  if (o.help) { console.log('usage: node cli/dash.mjs [--once] [--list] [--port N] [--no-color] [--size WxH]\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help'); return; }
+  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--port N] [--no-color] [--size WxH]\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows nothing until a Claude Code session is running\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help'); return; }
   const out = process.stdout; const color = detectColor(process.env, out, argv);
   const target = `127.0.0.1:${o.port}`;
   if (o.once || !out.isTTY) {
