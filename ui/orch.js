@@ -221,7 +221,7 @@
   function updateHeader() {
     if (!R.hbtn) return;
     var n = activeCount(), p = pendingCount();
-    R.n.textContent = String(n); R.dot.hidden = p <= 0;
+    R.n.textContent = n + ' active'; R.dot.hidden = p <= 0;
     R.hbtn.setAttribute('aria-label', 'Goals: ' + n + ' active' + (p > 0 ? ', ' + p + ' approval' + (p === 1 ? '' : 's') + ' pending' : '') + (panelOpen ? '. Close goals panel' : '. Open goals panel'));
     R.hbtn.classList.toggle('on', panelOpen); R.hbtn.setAttribute('aria-expanded', String(panelOpen));
   }

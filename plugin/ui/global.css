@@ -83,3 +83,20 @@ body.aos-replay-open .legend,body.aos-replay-open .updated{opacity:0;pointer-eve
   .aos-toasts{right:14px}
 }
 .aos-tl{flex:none;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:.06em;margin:0 -6px}
+
+/* mobile polish (<=720px): readable goal title, no clipped stats, touch-sized targets */
+@media (max-width:720px){
+  .goalbar{flex-wrap:wrap;height:auto;min-height:34px;row-gap:2px;padding:2px 0}
+  .goalbar .goal-title{flex:1 1 100%;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+  .goalbar .goal-count{flex:1 1 auto;white-space:normal}
+  .goalbar .segs{flex:0 1 80px;min-width:40px}
+  .stats{left:auto;box-sizing:border-box;width:auto;max-width:calc(100% - 28px)}
+  .stat-v{font-size:16px;min-height:20px;white-space:nowrap}
+  .stat-v small{font-size:11px}
+  .streams-btn .theme-l,.theme-btn .theme-l{display:none}
+  .streams-btn,.theme-btn{min-width:36px;justify-content:center}
+  .orch-hbtn,.theme-btn,.streams-btn,.live-ind,.aos-replay-btn{min-height:36px}
+  #dr-close{width:44px;height:44px}
+  .drawer button,.drawer .kv dd,.drawer summary{min-height:36px}
+  .drawer{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+}
