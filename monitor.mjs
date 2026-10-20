@@ -263,6 +263,10 @@ function finalNames(visible, rank) {
 //   .plan_state               goal.orch.plan_state: planning|awaiting_approval|approved|rejected pass through; 'supplied' (a plan
 //                             handed over, not yet validated) -> 'planning'; 'none' and anything unknown -> 'none'
 //   .paused_reason/.resume_at goal.orch.paused_reason / goal.orch.resume_at (governor pause)
+//   .limit_paused             true when paused_reason is a plan-limit pause (engine reasons: 'plan limit...', 'five-hour/seven-day utilisation...');
+//                             false for other pauses (overloaded, manual); .rerun_count = tasks in GoalDetail with rerun true
+//   GoalDetail.tasks[].rerun  task not terminal (done|failed|cancelled) whose newest attempt_log entry has outcome 'rate_limited' (attempt
+//                             not counted; the engine requeues it) = interrupted by the plan limit and will rerun after the pause
 //   .budget.max_new_tokens    goal.orch.budgets.max_new_tokens       .used_new_tokens     goal.orch.usage.new_tokens
 //   .budget.max_wall_s        goal.budget.max_wall_clock_s           .used_wall_s         now - orch.started_ms (updated_at for terminal goals)
 //   .budget.max_parallel      goal.orch.budgets.max_parallel         .max_attempts        goal.orch.budgets.max_attempts
@@ -289,6 +293,7 @@ const GOALS_DIR = path.join(ORCH, 'goals');
 const GOAL_READ_MAX = 50, STATE_GOALS_MAX = 20, GOAL_DIRS_SCAN_MAX = 5000, FILE_MAX = 2 * 1024 * 1024, EVENT_TAIL_BYTES = 256 * 1024, DETAIL_EVENTS = 25, TASKS_MAX = 200, APPROVALS_MAX = 200;
 const GID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, TAG_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const PLAN_STATES = new Set(['planning', 'awaiting_approval', 'approved', 'rejected', 'none']);
+const TERMINAL_TASK = new Set(['done', 'failed', 'cancelled']);
 const TERMINAL_GOAL = new Set(['achieved', 'failed', 'cancelled']);
 const ctl = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]+/g, ' ').trim().slice(0, n);
 // free text from the engine: absolute paths reduced to their basename, long token-like strings redacted
@@ -363,6 +368,7 @@ function goalOutcome(g, e, now) {
     tokens_per_accepted: merged ? Math.round(nn(U.new_tokens) / merged) : null, cost_usd: Math.round(nn(U.notional_usd) * 1e4) / 1e4,
     waiting_s: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 1000)), waiting_on: oldest === null ? null : plan !== null && plan === oldest ? 'plan' : 'approval' };
 }
+const isRerun = (t) => { const log = Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : [], l = log[log.length - 1]; return !TERMINAL_TASK.has(t.status) && !!l && typeof l === 'object' && l.outcome === 'rate_limited'; };
 function summaryOf(id, e, now) {
   const g = e.goal, o = objOr(g.orch), B = objOr(o.budgets), U = objOr(o.usage), GB = objOr(g.budget), T = e.tasks;
   const startedMs = Number.isFinite(o.started_ms) ? o.started_ms : null, status = ctl(g.status, 20) || 'unknown';
@@ -372,6 +378,7 @@ function summaryOf(id, e, now) {
     created_at: isoOrNull(g.created_at), updated_at: isoOrNull(g.updated_at),
     plan_state: o.plan_state === 'supplied' ? 'planning' : PLAN_STATES.has(o.plan_state) ? o.plan_state : 'none',
     paused_reason: o.paused_reason ? scrub(o.paused_reason, 160) : null, resume_at: isoOrNull(o.resume_at),
+    limit_paused: typeof o.paused_reason === 'string' && /plan limit|utili[sz]ation/i.test(o.paused_reason), rerun_count: T.filter((t) => isRerun(t)).length,
     budget: { max_new_tokens: nn(B.max_new_tokens), used_new_tokens: nn(U.new_tokens), max_wall_s: nn(GB.max_wall_clock_s), used_wall_s: startedMs === null ? 0 : Math.max(0, Math.round((endMs - startedMs) / 1000)),
       max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
     tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
@@ -393,7 +400,7 @@ function taskView(t, e, now) {
     depends_on: (Array.isArray(t.depends_on) ? t.depends_on : []).filter((d) => typeof d === 'string' && TAG_RE.test(d)).slice(0, 50),
     attempts: nn(t.attempts), max_attempts: nn(t.max_attempts), branch: typeof o.branch === 'string' ? ctl(o.branch, 100) : null, ran_s: Math.round(ran / 1000),
     new_tokens: o.tokens && Number.isFinite(o.tokens.new) ? nn(o.tokens.new) : tok, check_summary: check,
-    outcome, retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
+    outcome, rerun: isRerun(t), retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
     waiting_s: mine.length ? Math.max(0, Math.round((now - Math.min(...mine)) / 1000)) : null,
     waiting_for_human: t.status === 'needs_review' || mine.length > 0 || e.pending.some((p) => p.task_id === t.id),
     ...(t.status !== 'done' && lf.kind ? { error: scrub(`${lf.kind}${lf.note ? ': ' + lf.note : ''}`, 160) } : {}) };

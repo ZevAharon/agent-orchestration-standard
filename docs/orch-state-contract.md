@@ -13,7 +13,7 @@ mtime+size, rescanned at most once a second. A partial/corrupt write keeps the l
 | File | Read as | Fields used |
 |---|---|---|
 | `goal.json` (object) | goal | `title`, `description`, `status` (`achieved\|failed\|cancelled` are terminal), `created_at`, `updated_at`, `blocked_reason`, `success_criteria[{id,text,met}]`, `budget.max_wall_clock_s`, `orch.repo` (absolute; only its basename is exposed, and it maps tagged workers to a project), `orch.plan_state` (`planning\|awaiting_approval\|approved\|rejected\|none`; `supplied` -> `planning`; unknown -> `none`), `orch.plan_awaiting_since_ms`, `orch.paused_reason`, `orch.resume_at`, `orch.started_ms`, `orch.budgets.{max_new_tokens,max_parallel,max_attempts}`, `orch.usage.{new_tokens,notional_usd}` |
-| `tasks.json` (array, max 200) | tasks | `id`, `title`, `status` (`done\|failed\|cancelled\|needs_review\|running\|ready\|...`), `depends_on[]`, `attempts`, `max_attempts`, `orch.{phase,model_tier,branch,last_failure{kind,note},tokens.new}`, `orch.attempt_log[{tier,started_at,ended_at,new_tokens,notional_usd,checks_ok,counted}]` |
+| `tasks.json` (array, max 200) | tasks | `id`, `title`, `status` (`done\|failed\|cancelled\|needs_review\|running\|ready\|...`), `depends_on[]`, `attempts`, `max_attempts`, `orch.{phase,model_tier,branch,last_failure{kind,note},tokens.new}`, `orch.attempt_log[{tier,outcome,started_at,ended_at,new_tokens,notional_usd,checks_ok,counted}]` |
 | `events.ndjson` | last 25 lines (tail read of 256 KB; partial/bad lines dropped) | `type`, `ts`, `task_id`, `data.{reason,error,msg,title,status,plan_state,tier,attempt,outcome,rule,label,tool,exit_code,kind,cause,ok}` (first 4 scalar values become `text`) |
 | `approvals/A-<n>.json` | pending approvals | `status === 'pending'`, `task_id`, `requested_at` (else file mtime) |
 
@@ -45,10 +45,10 @@ the goal's repo (`orch.repo` basename) instead of the worktree, and count `worke
 - `GET /api/state` also carries `goals` (max 20 summaries); replay (`?at=`) omits `goals`.
 - GoalSummary: `id, title, status, repo_name, created_at, updated_at, plan_state, paused_reason, resume_at, blocked_reason,
   budget{max_new_tokens,used_new_tokens,max_wall_s,used_wall_s,max_parallel,running,max_attempts}, tasks_total, tasks_done,
-  tasks_failed, approvals_pending, workers, outcome{merged,discarded,tokens_per_accepted,cost_usd,waiting_s,waiting_on}`.
+  tasks_failed, approvals_pending, limit_paused, rerun_count, workers, outcome{merged,discarded,tokens_per_accepted,cost_usd,waiting_s,waiting_on}`.
 - GoalDetail = summary + `description, criteria[{id,text,met}], last_events[{type,ts,task_id,text}], tasks[{id,title,status,phase,
   tier,depends_on,attempts,max_attempts,branch,ran_s,new_tokens,check_summary,outcome,retries,tier_path,cost_usd,waiting_s,
-  waiting_for_human,error?}]`. No absolute path appears in any response.
+  waiting_for_human,rerun,error?}]`. `limit_paused` = `paused_reason` is a plan-limit pause (`plan limit...` / `...utilisation...`); `rerun` = task not done/failed/cancelled whose newest `attempt_log` entry has `outcome: rate_limited` (uncounted, requeued by the engine); `rerun_count` counts them. No absolute path appears in any response.
 
 ## Tests
 

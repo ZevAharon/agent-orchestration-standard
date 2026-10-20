@@ -53,6 +53,7 @@
     var d = new Date(t), now = new Date(), same = d.toDateString() === now.toDateString();
     return 'resumes ' + (same ? hm(t) : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm(t));
   }
+  function limitText(g) { var rs = fmtResume(g.resume_at).replace(/^resumes /, ''); return 'Paused by plan limit' + (rs ? ' \u2014 resumes at ' + rs : ''); }
   function baseName(p) { var parts = String(p || '').split('/').filter(Boolean); return parts.length ? parts[parts.length - 1] : ''; }
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
   function arr(x) { return Array.isArray(x) ? x : []; }
@@ -433,7 +434,8 @@
     var why = [];
     if (g.paused_reason) why.push(clip(g.paused_reason, 160));
     var rs = fmtResume(g.resume_at); if (rs) why.push(rs);
-    if (why.length) b.appendChild(el('span', 'orch-why', why.join(' · ')));
+    if (g.limit_paused) b.appendChild(el('span', 'orch-why orch-limit', limitText(g) + (num(g.rerun_count) ? ' · ' + g.rerun_count + ' to rerun' : '')));
+    else if (why.length) b.appendChild(el('span', 'orch-why', why.join(' · ')));
     b.addEventListener('click', function () { goDetail(g.id); });
     li.appendChild(b); return li;
   }
@@ -498,7 +500,7 @@
       return;
     }
     var d = detail && detail.id === g.id ? detail : null;
-    paint(D.head, JSON.stringify([g.title, g.status, g.repo_name, g.plan_state, g.paused_reason, g.resume_at, d && d.description, detailErr, g.created_at]), function (s) {
+    paint(D.head, JSON.stringify([g.title, g.status, g.repo_name, g.plan_state, g.paused_reason, g.resume_at, g.limit_paused, d && d.description, d && arr(d.tasks).filter(function (t) { return t.rerun; }).map(function (t) { return t.id + t.title; }), detailErr, g.created_at]), function (s) {
       var r = el('div', 'orch-dh');
       r.appendChild(statusPill('st-', G_ST, g.status));
       if (g.repo_name) r.appendChild(el('span', 'orch-repo', clip(g.repo_name, 80)));
@@ -506,7 +508,17 @@
       s.appendChild(r);
       s.appendChild(el('h3', 'orch-gtitle', clip(g.title, 400)));
       var why = []; if (g.paused_reason) why.push(clip(g.paused_reason, 300)); var rs = fmtResume(g.resume_at); if (rs) why.push(rs);
-      if (why.length) s.appendChild(el('p', 'orch-why', why.join(' · ')));
+      if (g.limit_paused) {
+        var bn = el('div', 'orch-limit-banner'); bn.setAttribute('role', 'status');
+        bn.appendChild(el('strong', null, limitText(g)));
+        if (g.paused_reason) bn.appendChild(el('span', 'orch-why', clip(g.paused_reason, 300)));
+        var rr = d ? arr(d.tasks).filter(function (t) { return t && t.rerun; }) : [];
+        if (rr.length) {
+          bn.appendChild(el('span', 'orch-why', 'Interrupted, will rerun (' + rr.length + '):'));
+          var ul = el('ul', 'orch-rerun'); rr.slice(0, 50).forEach(function (t) { ul.appendChild(el('li', null, clip(t.id, 40) + ' \u00b7 ' + clip(t.title, 120) + (t.tier ? ' \u00b7 ' + clip(t.tier, 20) : ''))); }); bn.appendChild(ul);
+        }
+        s.appendChild(bn);
+      } else if (why.length) s.appendChild(el('p', 'orch-why', why.join(' · ')));
       if (d && d.description) s.appendChild(el('p', 'orch-desc', clip(d.description, 6000)));
       if (detailErr) s.appendChild(el('p', 'orch-note', detailErr));
     });
