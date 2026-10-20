@@ -1,0 +1,143 @@
+{
+  "id": "g-rules",
+  "title": "Test goal",
+  "description": "",
+  "status": "achieved",
+  "success_criteria": [
+    {
+      "id": "c1",
+      "text": "a.txt holds alpha",
+      "met": true,
+      "check": {
+        "argv": [
+          "node",
+          "-e",
+          "const s=require('fs').readFileSync(\"a.txt\",'utf8').trim();if(s!==\"alpha\"){console.error('CHECKFAIL '+\"a.txt\"+' has '+JSON.stringify(s));process.exit(1)}"
+        ],
+        "timeout_s": 30
+      }
+    },
+    {
+      "id": "c2",
+      "text": "the README reads well",
+      "met": false,
+      "verify": "human"
+    }
+  ],
+  "budget": {
+    "max_ticks": 100000,
+    "max_usd": 50,
+    "max_wall_clock_s": 3600,
+    "spent_usd": 0.017812
+  },
+  "created_at": "2026-10-20T16:02:24.163Z",
+  "updated_at": "2026-10-20T16:02:24.974Z",
+  "orch": {
+    "repo": "/fixture/repo",
+    "base_branch": "main",
+    "base_commit": "9fe7dfb3bb757dd1f6bb3e1614880135436ca324",
+    "integration_branch": "aos/g-esc/integration",
+    "worktree_root": "/fixture/repo-aos-worktrees/g-esc",
+    "budgets": {
+      "max_new_tokens": 2000000,
+      "max_parallel": 3,
+      "max_attempts": 3,
+      "max_tasks": 12,
+      "task_wall_clock_s": 60,
+      "approval_ttl_s": 86400,
+      "stall_after_s": 60,
+      "max_turns": 30,
+      "attempt_usd_cap": 2
+    },
+    "approval_policy": {
+      "plan": "auto",
+      "outside_allowlist": "ask",
+      "dangerous": "deny"
+    },
+    "trust_repo_config": false,
+    "unsandboxed_checks": false,
+    "check_localhost_ports": [],
+    "policy": "policy.default.json",
+    "check_allowlist": [
+      "grep",
+      "node",
+      "test"
+    ],
+    "governor": {},
+    "usage": {
+      "new_tokens": 9012,
+      "cache_read_tokens": 28000,
+      "notional_usd": 0.017812,
+      "workers_started": 2
+    },
+    "plan_state": "approved",
+    "plan_session_id": null,
+    "paused_reason": null,
+    "halt_reason": null,
+    "started_ms": 1792512144218,
+    "reported": true,
+    "created_branches": [
+      "aos/g-esc/integration",
+      "aos/g-esc/t1"
+    ],
+    "repo_config_findings": [],
+    "instructions": {
+      "CLAUDE.md": null,
+      ".claude/CLAUDE.md": null,
+      "CLAUDE.local.md": null
+    },
+    "resume_at": null,
+    "approvals_seen": {},
+    "plan_fingerprint": {
+      "plan_hash": "0e391b1324c767eb4d63e772680c1afdf9fff1b6847263a868332c8cc6cf1a7e",
+      "tasks_hash": "ba9946cc8299d18832ad522012167df07f04f6bd7c19de56e4c7f78f37feb1f7"
+    },
+    "plan_awaiting_since_ms": 1792512144216,
+    "plan_approval": {
+      "by": "human",
+      "at": "2026-10-20T16:02:24.218Z",
+      "plan_hash": "0e391b1324c767eb4d63e772680c1afdf9fff1b6847263a868332c8cc6cf1a7e",
+      "tasks_hash": "ba9946cc8299d18832ad522012167df07f04f6bd7c19de56e4c7f78f37feb1f7",
+      "has_commands": true
+    },
+    "soft": [],
+    "rules": {
+      "hash": "a1b2c3d4e5f6",
+      "sha256": "a1b2c3d4e5f60000000000000000000000000000000000000000000000000000",
+      "version": 1,
+      "profile": "node-library",
+      "legacy": false,
+      "layers": [
+        {
+          "layer": "default",
+          "sha12": "111111111111"
+        },
+        {
+          "layer": "user",
+          "sha12": "222222222222"
+        },
+        {
+          "layer": "repo",
+          "sha12": "333333333333"
+        },
+        {
+          "layer": "goal",
+          "sha12": "444444444444"
+        }
+      ],
+      "loosenings": [
+        {
+          "rule_id": "goal:budgets.max_usd@abababababababababababababababab",
+          "layer": "goal"
+        }
+      ],
+      "dropped": [
+        {
+          "rule_id": "repo:checks.allowlist.node-test@cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "layer": "repo",
+          "reason": "loosening"
+        }
+      ]
+    }
+  }
+}

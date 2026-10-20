@@ -63,3 +63,15 @@ g = JSON.parse(fs.readFileSync(path.join(scope, 'goal.json'), 'utf8')); g.id = '
 const st = JSON.parse(fs.readFileSync(path.join(scope, 'tasks.json'), 'utf8')); st[0].orch.attempt_log[0].outcome = 'scope_violation'; st[0].orch.attempt_log[0].checks_ok = null;
 fs.writeFileSync(path.join(scope, 'tasks.json'), JSON.stringify(st, null, 2) + '\n');
 console.log('fixtures written to', OUT);
+// rules: escalation with an R4+ rule-set summary in goal.json (hand-derived; shape from engine.mjs _storeSnapshot), one human-review criterion, and engine rule ids on events
+const rules = path.join(OUT, 'rules', 'goals', 'g-rules'); fs.rmSync(path.join(OUT, 'rules'), { recursive: true, force: true }); fs.cpSync(esc, rules, { recursive: true });
+g = JSON.parse(fs.readFileSync(path.join(rules, 'goal.json'), 'utf8')); g.id = 'g-rules';
+const H = (c) => c.repeat(16);
+g.orch.rules = { hash: 'a1b2c3d4e5f6', sha256: 'a1b2c3d4e5f6' + '0'.repeat(52), version: 1, profile: 'node-library', legacy: false,
+  layers: [{ layer: 'default', sha12: '111111111111' }, { layer: 'user', sha12: '222222222222' }, { layer: 'repo', sha12: '333333333333' }, { layer: 'goal', sha12: '444444444444' }],
+  loosenings: [{ rule_id: `goal:budgets.max_usd@${H('ab')}`, layer: 'goal' }], dropped: [{ rule_id: `repo:checks.allowlist.node-test@${H('cd')}`, layer: 'repo', reason: 'loosening' }] };
+g.success_criteria.push({ id: 'c2', text: 'the README reads well', met: false, verify: 'human' });
+fs.writeFileSync(path.join(rules, 'goal.json'), JSON.stringify(g, null, 2) + '\n');
+const rl = fs.readFileSync(path.join(rules, 'events.ndjson'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+for (const e of rl) if (e.type === 'task.retried') e.data.rule = 'retry.ladder';
+fs.writeFileSync(path.join(rules, 'events.ndjson'), rl.map((e) => JSON.stringify(e)).join('\n') + '\n');

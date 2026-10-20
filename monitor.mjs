@@ -285,6 +285,10 @@ function finalNames(visible, rank) {
 //                             check_summary='checking'|'checks passed'|'checks failed'|null (same words as the control server) from phase / last attempt checks_ok,
 //                             waiting_for_human = status 'needs_review' or a pending approval for the task,
 //                             error = orch.last_failure kind+note (scrubbed), only when the task is not done
+//   .rules                    goal.orch.rules (the engine's rule-set snapshot summary; absent on older goals -> null): {hash (12 chars), profile, legacy, loosenings: n,
+//                             dropped: n}; GoalDetail adds layers[{layer, sha12}], loosening_ids[{rule_id, layer}] and dropped_ids[{rule_id, layer, reason}] (ids only: no rule
+//                             values and no paths; the 32-hex content binding of an id is shortened to 8 characters for display)
+//   GoalDetail.criteria[].verify/.needs_confirmation   present only on a human-review criterion: verify 'human', needs_confirmation = not yet met
 //   .last_events              the 25 newest lines of events.ndjson, oldest first (same order as state.events): {type, ts, task_id, text}
 // Replay (?at=): goals are NOT time-sliced; replayed /api/state omits the `goals` key. Agent tags and goal-based project grouping
 // still come from the (time-sliced) events.
@@ -372,6 +376,19 @@ function goalOutcome(g, e, now) {
 // engine records a scope violation as attempt_log outcome 'scope_violation' (changed files outside path_scope; the attempt fails and is escalated)
 const scopeViolations = (t) => (Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : []).filter((a) => a && typeof a === 'object' && a.outcome === 'scope_violation').length;
 const isRerun = (t) => { const log = Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : [], l = log[log.length - 1]; return !TERMINAL_TASK.has(t.status) && !!l && typeof l === 'object' && l.outcome === 'rate_limited'; };
+const RULE_ID_RE = /@([0-9a-f]{8})[0-9a-f]{24}\b/g;
+const ruleId = (v) => ctl(v, 160).replace(RULE_ID_RE, '@$1');
+function rulesView(o, detail) {
+  const r = objOr(o.rules); if (typeof r.hash !== 'string' || !r.hash) return null;
+  const A = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+  const out = { hash: ctl(r.hash, 12), profile: ctl(r.profile, 24) || 'strict', legacy: r.legacy === true, loosenings: A(r.loosenings).length, dropped: A(r.dropped).length };
+  if (detail) {
+    out.layers = A(r.layers).slice(0, 8).map((l) => ({ layer: ctl(l.layer, 16), sha12: typeof l.sha12 === 'string' ? ctl(l.sha12, 12) : null }));
+    out.loosening_ids = A(r.loosenings).slice(0, 30).map((l) => ({ rule_id: ruleId(l.rule_id), layer: ctl(l.layer, 16) }));
+    out.dropped_ids = A(r.dropped).slice(0, 30).map((l) => ({ rule_id: ruleId(l.rule_id), layer: ctl(l.layer, 16), reason: ctl(l.reason, 40) }));
+  }
+  return out;
+}
 function summaryOf(id, e, now) {
   const g = e.goal, o = objOr(g.orch), B = objOr(o.budgets), U = objOr(o.usage), GB = objOr(g.budget), T = e.tasks;
   const startedMs = Number.isFinite(o.started_ms) ? o.started_ms : null, status = ctl(g.status, 20) || 'unknown';
@@ -386,7 +403,7 @@ function summaryOf(id, e, now) {
       max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
     tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
     approvals_pending: e.pending.length, blocked_reason: g.blocked_reason ? scrub(g.blocked_reason, 200) : null,
-    outcome: goalOutcome(g, e, now),
+    outcome: goalOutcome(g, e, now), rules: rulesView(o, false),
   };
 }
 function taskView(t, e, now) {
@@ -443,8 +460,8 @@ function goalDetail(id) {
   const v = goalsIndex(), e = GID_RE.test(id) ? v.byId.get(id) : null;
   if (!e) return null;
   const now = Date.now();
-  return { ...summaryOf(id, e, now), description: ctl(e.goal.description, 500),
-    criteria: (Array.isArray(e.goal.success_criteria) ? e.goal.success_criteria : []).slice(0, 50).filter((c) => c && typeof c === 'object').map((c, i) => ({ id: ctl(c.id ?? 'c' + (i + 1), 40), text: ctl(c.text, 200), met: c.met === true })),
+  return { ...summaryOf(id, e, now), rules: rulesView(objOr(e.goal.orch), true), description: ctl(e.goal.description, 500),
+    criteria: (Array.isArray(e.goal.success_criteria) ? e.goal.success_criteria : []).slice(0, 50).filter((c) => c && typeof c === 'object').map((c, i) => ({ id: ctl(c.id ?? 'c' + (i + 1), 40), text: ctl(c.text, 200), met: c.met === true, ...(c.verify === 'human' ? { verify: 'human', needs_confirmation: c.met !== true } : {}) })),
     tasks: e.tasks.map((t) => taskView(t, e, now)), last_events: e.events.slice(-DETAIL_EVENTS) };
 }
 // repo roots stay internal: used only to group tagged workers under the goal's project

@@ -273,7 +273,7 @@
     R.vList = el('div', 'orch-view'); R.vDetail = el('div', 'orch-view'); R.vForm = el('div', 'orch-view');
     R.body.appendChild(R.vList); R.body.appendChild(R.vDetail); R.body.appendChild(R.vForm);
     R.sNew = sect(R.vList, 'new'); R.sInbox = sect(R.vList, 'inbox'); R.sList = sect(R.vList, 'list');
-    var names = ['head', 'ctl', 'plan', 'appr', 'crit', 'budget', 'dag', 'tasks', 'events'];
+    var names = ['head', 'ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'dag', 'tasks', 'events'];
     R.d = {}; names.forEach(function (n) { R.d[n] = sect(R.vDetail, n); });
     buildForm();
 
@@ -442,6 +442,14 @@
       s.appendChild(ul);
     });
   }
+  /* rule-set chip (read-only): profile, hash, loosenings. Data comes from the monitor's GoalSummary.rules (counts and a 12-char hash only). */
+  function rulesChip(r) {
+    var n = num(r.loosenings), dr = num(r.dropped);
+    var c = el('span', 'orch-rules tnum', clip(r.profile || 'strict', 24) + ' \u00b7 ' + clip(r.hash, 12) + (n ? ' \u00b7 ' + n + (n === 1 ? ' loosening' : ' loosenings') : ''));
+    c.setAttribute('data-rules', String(clip(r.hash, 12)));
+    c.title = 'Rule set ' + clip(r.hash, 12) + (r.legacy ? ' (legacy goal)' : '') + (dr ? '; ' + dr + ' repo loosening' + (dr === 1 ? '' : 's') + ' not applied' : '');
+    return c;
+  }
   function goalRow(g) {
     var li = el('li'); var b = el('button', 'orch-goal'); b.type = 'button'; b.setAttribute('data-id', String(g.id));
     b.setAttribute('aria-label', 'Open goal: ' + clip(g.title, 120) + ', ' + (G_ST[g.status] ? g.status : 'unknown'));
@@ -451,6 +459,7 @@
     b.appendChild(r1);
     var r2 = el('span', 'orch-r2');
     if (g.repo_name) r2.appendChild(el('span', 'orch-repo', clip(g.repo_name, 80)));
+    if (isObj(g.rules)) r2.appendChild(rulesChip(g.rules));
     var td = num(g.tasks_done), tt = num(g.tasks_total);
     var pr = el('span', 'orch-prog tnum', td + '/' + tt + ' tasks'); pr.setAttribute('data-prog', td + '/' + tt); r2.appendChild(pr);
     if (num(g.tasks_failed) > 0) r2.appendChild(el('span', 'orch-failed tnum', g.tasks_failed + ' failed'));
@@ -524,7 +533,7 @@
     if (!g) {
       var msg = detailErr || (detailLoading ? 'Loading goal…' : 'Goal not found.');
       paint(D.head, 'nf|' + msg, function (s) { s.appendChild(el('p', 'orch-empty', msg)); });
-      ['ctl', 'plan', 'appr', 'crit', 'budget', 'dag', 'tasks', 'events'].forEach(function (k) { paint(D[k], 'none', function () {}); });
+      ['ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'dag', 'tasks', 'events'].forEach(function (k) { paint(D[k], 'none', function () {}); });
       return;
     }
     var d = detail && detail.id === g.id ? detail : null;
@@ -553,7 +562,7 @@
     paintCtl(false);
     renderPlan();
     renderApprovals();
-    paint(D.crit, JSON.stringify(d && d.criteria), function (s) {
+    paint(D.crit, JSON.stringify([g.id, d && d.criteria]), function (s) {
       var cr = arr(d && d.criteria).filter(isObj);
       if (!d) { return; }
       label(s, 'Success criteria');
@@ -562,9 +571,27 @@
       cr.forEach(function (c) {
         var li = el('li', c.met ? 'met' : ''); li.appendChild(el('span', 'sr-only', c.met ? 'Met: ' : 'Not met: '));
         li.appendChild(el('span', 'orch-ck', c.met ? '✓' : '○')); li.lastChild.setAttribute('aria-hidden', 'true');
-        li.appendChild(el('span', 'orch-ct', clip(c.text || c.id, 600))); ul.appendChild(li);
+        var ct = el('span', 'orch-ct', clip(c.text || c.id, 600));
+        if (c.verify === 'human') { /* read-only: a human confirms these with the CLI (aos-orch confirm), never from this panel */
+          var hb = el('span', 'orch-human', c.needs_confirmation ? 'needs confirmation' : 'human review'); hb.setAttribute('data-human', c.needs_confirmation ? 'pending' : 'done');
+          if (c.needs_confirmation) hb.title = 'Blocks the goal from finishing until a human confirms it: aos-orch confirm ' + clip(g.id, 80) + ' ' + clip(c.id, 40);
+          ct.appendChild(document.createTextNode(' ')); ct.appendChild(hb);
+        }
+        li.appendChild(ct); ul.appendChild(li);
       });
       s.appendChild(ul);
+    });
+    paint(D.rules, JSON.stringify(d && d.rules), function (s) {
+      var r = d && d.rules; if (!isObj(r)) return;
+      label(s, 'Rules'); s.appendChild(rulesChip(r));
+      var ly = arr(r.layers).filter(isObj);
+      if (ly.length) s.appendChild(el('p', 'orch-muted tnum', 'layers: ' + ly.map(function (l) { return clip(l.layer, 16) + (l.sha12 ? '(' + clip(l.sha12, 6) + ')' : ''); }).join(' ')));
+      function idList(title, items, cls) {
+        items = arr(items).filter(isObj); if (!items.length) return;
+        s.appendChild(el('p', 'orch-muted', title + ' (' + items.length + ')'));
+        var ul = el('ul', 'orch-ruleids ' + cls); items.slice(0, 30).forEach(function (x) { ul.appendChild(el('li', null, clip(x.rule_id, 160))); }); s.appendChild(ul);
+      }
+      idList('Loosenings approved with the plan', r.loosening_ids, 'lo'); idList('Repo loosenings not applied', r.dropped_ids, 'dr');
     });
     paint(D.budget, JSON.stringify([g.budget, g.outcome]), function (s) {
       label(s, 'Budget'); budgetMeters(s, g.budget); outcomeLine(s, g.outcome);
@@ -832,6 +859,14 @@
   function buildForm() {
     var f = el('form', 'orch-form'); f.noValidate = true; f.setAttribute('aria-label', 'New goal');
     function inp(type, name) { var i = el('input', 'orch-in'); i.type = type; i.name = name; i.autocomplete = 'off'; return i; }
+    /* draft from a prompt: a PROPOSAL only. The control server returns a draft (no goal exists); this form is pre-filled for review and edit, and only "Create goal" creates anything. */
+    var dw = el('fieldset', 'orch-field orch-draft'); dw.appendChild(el('legend', 'orch-fl', 'Draft from a prompt (optional)'));
+    var pt = el('textarea', 'orch-in orch-ta'); pt.name = 'prompt'; pt.rows = 3; pt.maxLength = 4000;
+    F.prompt = field(dw, 'og-prompt', 'What should be done?', pt, 'Uses the repo path below. A model proposes a goal; you review and edit it, and nothing is created until you press Create goal.');
+    F.draftOut = el('div', 'orch-draftout'); F.draftOut.setAttribute('aria-live', 'polite');
+    var an = el('textarea', 'orch-in orch-ta'); an.name = 'answers'; an.rows = 3; an.maxLength = 2000; an.hidden = true; an.setAttribute('aria-label', 'Answers to the draft questions'); F.answers = an;
+    F.draftBtn = wbtn('Draft goal', '', function () { runDraft(); }); F.draftBtn.setAttribute('data-act', 'draft-goal'); F.draftRound = 0; F.draftQs = [];
+    dw.appendChild(F.draftOut); dw.appendChild(an); dw.appendChild(F.draftBtn); f.appendChild(dw);
     F.title = field(f, 'og-title', 'Title', inp('text', 'title')); F.title.maxLength = 200;
     var ta = el('textarea', 'orch-in orch-ta'); ta.name = 'description'; ta.rows = 4; ta.maxLength = 20000;
     F.desc = field(f, 'og-desc', 'Description', ta, 'What should be done, and what must not change.');
@@ -873,15 +908,27 @@
     f.addEventListener('submit', function (e) { e.preventDefault(); if (!F.submit.disabled) submitForm(); });
     R.vForm.appendChild(f); F.form = f;
   }
-  function addCrit(val, focus) {
-    var row = el('div', 'orch-critrow'); var i = el('input', 'orch-in'); i.type = 'text'; i.maxLength = 500; i.value = val; i.setAttribute('aria-label', 'Success criterion'); i.setAttribute('data-crit', '1');
+  function addCrit(val, focus, meta) {
+    /* one wrapper per criterion: the input (+ remove) and, for a drafted criterion, its check or HUMAN REVIEW marker. The check argv is carried to the submit unchanged. */
+    var wrap = el('div', 'orch-critwrap'); var row = el('div', 'orch-critrow'); var i = el('input', 'orch-in');
+    i.type = 'text'; i.maxLength = 500; i.value = val; i.setAttribute('aria-label', 'Success criterion'); i.setAttribute('data-crit', '1');
+    wrap._input = i; wrap._check = null; wrap._verify = null;
     var rm = btn('Remove', 'orch-rm', function () {
-      if (F.critList.children.length <= 1) { i.value = ''; i.focus(); return; }
-      var nxt = row.nextSibling || row.previousSibling; F.critList.removeChild(row); safe(function () { nxt.querySelector('input').focus(); });
+      if (F.critList.children.length <= 1) { i.value = ''; wrap._check = null; wrap._verify = null; var m0 = wrap.querySelector('.orch-critmeta'); if (m0) wrap.removeChild(m0); i.focus(); return; }
+      var nxt = wrap.nextSibling || wrap.previousSibling; F.critList.removeChild(wrap); safe(function () { nxt.querySelector('input').focus(); });
     });
     rm.setAttribute('aria-label', 'Remove criterion'); rm.textContent = '×'; rm.setAttribute('data-act', 'remove-criterion');
-    row.appendChild(i); row.appendChild(rm); F.critList.appendChild(row); if (focus) i.focus();
+    row.appendChild(i); row.appendChild(rm); wrap.appendChild(row);
+    if (isObj(meta) && (isObj(meta.check) || meta.verify === 'human')) {
+      wrap._check = isObj(meta.check) ? { argv: arr(meta.check.argv).map(String), timeout_s: num(meta.check.timeout_s) } : null; wrap._verify = meta.verify === 'human' ? 'human' : null;
+      var mt = el('div', 'orch-critmeta'); mt.setAttribute('data-crit-meta', wrap._verify ? 'human' : 'check');
+      mt.textContent = wrap._verify ? 'HUMAN REVIEW: a person must confirm this before the goal can finish'
+        : 'check: ' + wrap._check.argv.map(function (a) { return cleanTxt(a, 120); }).join(' ') + ' (sandboxed, ' + wrap._check.timeout_s + 's)' + (meta.matched_rule ? ' \u00b7 allowed by ' + cleanTxt(meta.matched_rule, 80) : '');
+      wrap.appendChild(mt);
+    }
+    F.critList.appendChild(wrap); if (focus) i.focus();
   }
+  function cleanTxt(v, n) { return clip(String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g, ' '), n); }
   function setErr(ctrl, msg) { var er = ctrl._err; if (!er) return; er.hidden = !msg; er.textContent = msg || ''; if (msg) ctrl.setAttribute('aria-invalid', 'true'); else ctrl.removeAttribute('aria-invalid'); }
   function intIn(c, lo, hi, name) {
     var raw = String(c.value).trim(), v = Number(raw);
@@ -897,8 +944,11 @@
     else if (repo.charAt(0) !== '/' && repo.indexOf('~/') !== 0) { setErr(F.repo, 'Use an absolute path (starting with / or ~/).'); bad.push(F.repo); }
     else if (/[\0\r\n]/.test(repo)) { setErr(F.repo, 'Repo path contains invalid characters.'); bad.push(F.repo); } else setErr(F.repo, '');
     if (br && (!/^[A-Za-z0-9._\/-]+$/.test(br) || br.charAt(0) === '-' || br.indexOf('..') >= 0)) { setErr(F.branch, 'Branch name has invalid characters.'); bad.push(F.branch); } else setErr(F.branch, '');
-    var crits = [], ins = F.critList.querySelectorAll('input'), i, longCrit = false;
-    for (i = 0; i < ins.length; i++) { var t = ins[i].value.trim(); if (t) { crits.push(t); if (t.length > 500) longCrit = true; } }
+    var crits = [], critObjs = [], ins = F.critList.querySelectorAll('input'), i, longCrit = false, ws = F.critList.children;
+    for (i = 0; i < ins.length; i++) {
+      var t = ins[i].value.trim();
+      if (t) { crits.push(t); if (t.length > 500) longCrit = true; var o = { text: t }; if (ws[i] && ws[i]._check) o.check = ws[i]._check; if (ws[i] && ws[i]._verify) o.verify = 'human'; critObjs.push(o); }
+    }
     if (!crits.length) { F.critErr.hidden = false; F.critErr.textContent = 'Add at least one success criterion.'; bad.push(ins[0]); }
     else if (crits.length > 20) { F.critErr.hidden = false; F.critErr.textContent = 'At most 20 criteria.'; bad.push(ins[0]); }
     else if (longCrit) { F.critErr.hidden = false; F.critErr.textContent = 'Each criterion must be 500 characters or fewer.'; bad.push(ins[0]); }
@@ -911,11 +961,46 @@
     if (bad.length) { safe(function () { bad[0].focus(); }); return null; }
     var body = { title: title, description: desc, repo: repo };
     if (br) body.base_branch = br;
-    body.success_criteria = crits.map(function (c) { return { text: c }; });
+    body.success_criteria = critObjs;
     if (allow.length) body.check_allowlist = allow;
     body.budgets = { max_new_tokens: tok, max_wall_s: wall, max_parallel: par, max_attempts: att };
     body.trust_repo_config = !!F.trust.checked; body.unsandboxed_checks = !!F.unsb.checked;
     return body;
+  }
+  /* ---- draft from prompt: POST /api/goals/draft returns a proposal; nothing is created here ---- */
+  var DRAFT_ROUNDS = 2;
+  function draftNote(cls, txt) { var p = el('p', cls, txt); F.draftOut.appendChild(p); return p; }
+  function runDraft() {
+    clear(F.draftOut);
+    if (!writeOk()) { draftNote('orch-ferr', writeWhy()); return; }
+    var prompt = F.prompt.value.trim(), repo = F.repo.value.trim(), ans = F.answers.value.trim();
+    if (!prompt) { setErr(F.prompt, 'Describe what should be done.'); safe(function () { F.prompt.focus(); }); return; } setErr(F.prompt, '');
+    if (!repo || (repo.charAt(0) !== '/' && repo.indexOf('~/') !== 0) || /[\0\r\n]/.test(repo)) { setErr(F.repo, 'Enter the absolute repo path first (the draft reads its files list and scripts).'); safe(function () { F.repo.focus(); }); return; } setErr(F.repo, '');
+    if (F.draftQs.length && ans) { if (F.draftRound >= DRAFT_ROUNDS) { draftNote('orch-hint', 'Two rounds of questions are enough: edit the form below directly.'); return; } F.draftRound++; }
+    var full = F.draftQs.length && ans ? prompt + '\n\nAnswers to your questions:\n' + ans : prompt;
+    F.draftBtn._busy = true; applyWrite(); draftNote('orch-hint', 'Drafting\u2026');
+    creq('POST', '/api/goals/draft', { prompt: clip(full, 6000), repo: repo }).then(function (j) { F.draftBtn._busy = false; applyWrite(); showDraft(j); }, function (e) {
+      F.draftBtn._busy = false; applyWrite(); clear(F.draftOut); draftNote('orch-ferr', (e && e.message) ? e.message : 'Request failed');
+    });
+  }
+  function showDraft(j) {
+    clear(F.draftOut);
+    var d = isObj(j && j.draft) ? j.draft : null, errs = arr(j && j.errors), qs = arr((j && j.questions) || (d && d.questions)).map(function (x) { return cleanTxt(x, 300); }).filter(Boolean).slice(0, 3);
+    F.draftQs = qs;
+    if (errs.length) { var ue = el('ul', 'orch-ferr'); errs.slice(0, 8).forEach(function (x) { ue.appendChild(el('li', null, cleanTxt(x, 300))); }); F.draftOut.appendChild(ue); }
+    if (qs.length) {
+      draftNote('orch-hint', 'The draft needs more detail. Answer these, then press Draft goal again' + (F.draftRound >= DRAFT_ROUNDS ? ' (or edit the form directly)' : '') + ':');
+      var ql = el('ul', 'orch-draftq'); qs.forEach(function (x) { ql.appendChild(el('li', null, x)); }); F.draftOut.appendChild(ql); F.answers.hidden = false;
+    } else F.answers.hidden = true;
+    if (!d || errs.length && !arr(d.success_criteria).length) return;
+    if (typeof d.title === 'string') F.title.value = cleanTxt(d.title, 200);
+    if (typeof d.description === 'string') F.desc.value = d.description.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g, ' ').slice(0, 20000);
+    var cs = arr(d.success_criteria).filter(isObj).slice(0, 20);
+    if (cs.length) { clear(F.critList); cs.forEach(function (c) { addCrit(cleanTxt(c.text, 500), false, c); }); }
+    var b = isObj(d.budgets) ? d.budgets : {};
+    [[F.tok, b.max_new_tokens, 1000, 1000000000], [F.wall, b.max_wall_s, 60, 604800], [F.par, b.max_parallel, 1, 16], [F.att, b.max_attempts, 1, 10]].forEach(function (x) { var v = Number(x[1]); if (isFinite(v) && v >= x[2] && v <= x[3] && Math.floor(v) === v) x[0].value = String(v); });
+    arr(d.risks).slice(0, 5).forEach(function (r) { draftNote('orch-hint', 'Risk: ' + cleanTxt(r, 200)); });
+    draftNote('orch-hint', 'Draft loaded below' + (j && j.rules_hash ? ' (rules ' + clip(j.rules_hash, 12) + ')' : '') + '. Review and edit it; nothing has been created yet.');
   }
   function submitForm() {
     F.err.hidden = true; F.err.textContent = '';
@@ -939,6 +1024,7 @@
     F.tok.value = '2000000'; F.wall.value = '2700'; F.par.value = '3'; F.att.value = '3'; F.trust.checked = false; F.unsb.checked = false;
     [F.title, F.desc, F.repo, F.branch, F.allow, F.tok, F.wall, F.par, F.att].forEach(function (c) { setErr(c, ''); });
     F.critErr.hidden = true; F.err.hidden = true;
+    F.prompt.value = ''; F.answers.value = ''; F.answers.hidden = true; clear(F.draftOut); F.draftRound = 0; F.draftQs = [];
   }
 
   /* ---------------- state wiring ---------------- */
