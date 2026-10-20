@@ -253,6 +253,171 @@ function finalNames(visible, rank) {
   return fin;
 }
 
+// ---------- orchestrator goals (READ-ONLY view of the engine's per-goal directories) ----------
+// Source: ${AOS_ORCH_DIR || (CLAUDE_PLUGIN_DATA || ~/.claude/plugins/data/aos-dashboard-aos-local)/orch}/goals/<goal-id>/
+// Field mapping (engine file -> API). Nothing is ever written; no full path leaves this process (repo is reduced to its basename,
+// free text is scrubbed of absolute paths and token-like strings).
+//   GoalSummary.id            dir name (== goal.json id)             .title/.description  goal.json title/description (cleaned, capped)
+//   .status                   goal.json status                       .repo_name           basename(goal.json orch.repo)
+//   .created_at/.updated_at   goal.json                              .blocked_reason      goal.json blocked_reason (extra, additive)
+//   .plan_state               goal.orch.plan_state: planning|awaiting_approval|approved|rejected pass through; 'supplied' (a plan
+//                             handed over, not yet validated) -> 'planning'; 'none' and anything unknown -> 'none'
+//   .paused_reason/.resume_at goal.orch.paused_reason / goal.orch.resume_at (governor pause)
+//   .budget.max_new_tokens    goal.orch.budgets.max_new_tokens       .used_new_tokens     goal.orch.usage.new_tokens
+//   .budget.max_wall_s        goal.budget.max_wall_clock_s           .used_wall_s         now - orch.started_ms (updated_at for terminal goals)
+//   .budget.max_parallel      goal.orch.budgets.max_parallel         .max_attempts        goal.orch.budgets.max_attempts
+//   .budget.running           count of tasks.json entries with status 'running'
+//   .tasks_total/done/failed  tasks.json status counts ('done' / 'failed')
+//   .approvals_pending        approvals/A-<n>.json with status 'pending'
+//   .workers                  agents currently running whose hook events carry gid == goal id (added from the live fold)
+//   GoalDetail.criteria       goal.success_criteria {id,text,met}    .tasks[]  tasks.json: phase=orch.phase, tier=orch.model_tier,
+//                             branch=orch.branch, ran_s=sum(orch.attempt_log durations), new_tokens=orch.tokens.new (else sum of attempts),
+//                             check_summary='checking'|'checks passed'|'checks failed'|null from phase / last attempt checks_ok,
+//                             waiting_for_human = status 'needs_review' or a pending approval for the task,
+//                             error = orch.last_failure kind+note (scrubbed), only when the task is not done
+//   .last_events              the 25 newest lines of events.ndjson, oldest first (same order as state.events): {type, ts, task_id, text}
+// Replay (?at=): goals are NOT time-sliced; replayed /api/state omits the `goals` key. Agent tags and goal-based project grouping
+// still come from the (time-sliced) events.
+const ORCH = process.env.AOS_ORCH_DIR ? path.resolve(process.env.AOS_ORCH_DIR)
+  : path.join(process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), '.claude', 'plugins', 'data', 'aos-dashboard-aos-local'), 'orch');
+const GOALS_DIR = path.join(ORCH, 'goals');
+const GOAL_READ_MAX = 50, STATE_GOALS_MAX = 20, GOAL_DIRS_SCAN_MAX = 5000, FILE_MAX = 2 * 1024 * 1024, EVENT_TAIL_BYTES = 256 * 1024, DETAIL_EVENTS = 25, TASKS_MAX = 200, APPROVALS_MAX = 200;
+const GID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, TAG_RE = /^[A-Za-z0-9._-]{1,64}$/;
+const PLAN_STATES = new Set(['planning', 'awaiting_approval', 'approved', 'rejected', 'none']);
+const TERMINAL_GOAL = new Set(['achieved', 'failed', 'cancelled']);
+const ctl = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]+/g, ' ').trim().slice(0, n);
+// free text from the engine: absolute paths reduced to their basename, long token-like strings redacted
+const scrub = (s, n = 160) => ctl(s, 600)
+  .replace(/(^|[\s("'=:])((?:~|\/)[^\s"'`),;]*)/g, (m, pre, p) => pre + (path.basename(p) || '.'))
+  .replace(/\b(sk|pk|ghp|gho|xox[a-z]|AKIA|eyJ)[A-Za-z0-9_\-]{8,}/g, '[redacted]').replace(/\b[A-Za-z0-9+\/_\-]{32,}\b/g, '[redacted]').slice(0, n);
+const nn = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+const isoOrNull = (v) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v.slice(0, 40) : null);
+const objOr = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+
+// reads a JSON file (size-capped); undefined on any failure (missing, partial write, corrupt, too big)
+function readJsonSafe(file, st) {
+  try { if (!st || st.size > FILE_MAX) return undefined; return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return undefined; }
+}
+const statOrNull = (f) => { try { return fs.statSync(f); } catch { return null; } };
+const sigOf = (st) => (st ? st.mtimeMs + ':' + st.size : '-');
+// last N events of an ndjson file by reading only its tail; a cut first line and a partial last line are dropped
+function tailEvents(file, st, n) {
+  let fd;
+  try {
+    if (!st || st.size === 0) return [];
+    fd = fs.openSync(file, 'r');
+    const len = Math.min(st.size, EVENT_TAIL_BYTES), buf = Buffer.alloc(len);
+    const got = fs.readSync(fd, buf, 0, len, st.size - len);
+    let lines = buf.subarray(0, got).toString('utf8').split('\n');
+    if (st.size > len) lines = lines.slice(1);
+    const out = [];
+    for (let i = lines.length - 1; i >= 0 && out.length < n; i--) { if (!lines[i]) continue; try { const e = JSON.parse(lines[i]); if (e && typeof e === 'object' && typeof e.type === 'string') out.push(e); } catch {} }
+    return out.reverse();
+  } catch { return []; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+}
+const EVENT_KEYS = ['reason', 'error', 'msg', 'title', 'status', 'plan_state', 'tier', 'attempt', 'outcome', 'rule', 'label', 'tool', 'exit_code', 'kind', 'cause', 'ok'];
+function eventView(e) {
+  const d = objOr(e.data), parts = [];
+  for (const k of EVENT_KEYS) { const v = d[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') parts.push((k === 'reason' || k === 'error' || k === 'msg' || k === 'title' ? '' : k + '=') + scrub(v, 100)); if (parts.length >= 4) break; }
+  return { type: ctl(e.type, 60), ts: isoOrNull(e.ts), task_id: typeof e.task_id === 'string' && TAG_RE.test(e.task_id) ? e.task_id : null, text: parts.join(' ').slice(0, 160) };
+}
+function pendingApprovals(dir, dst) { // -> {sig, ids: Array of task ids with a pending request}
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => /^A-\d{1,6}\.json$/.test(n)).slice(0, APPROVALS_MAX); } catch { return []; }
+  const out = [];
+  for (const n of names) { const f = path.join(dir, n), a = readJsonSafe(f, statOrNull(f)); if (a && typeof a === 'object' && a.status === 'pending') out.push(typeof a.task_id === 'string' && TAG_RE.test(a.task_id) ? a.task_id : ''); }
+  return out;
+}
+
+const goalEntries = new Map(); // id -> { sig, goal, tasks, pending, events, gsig, tsig, esig, asig }
+let goalsView = { list: [], byId: new Map(), sig: '' };
+let goalsScanAt = 0;
+function loadGoalEntry(id) {
+  const dir = path.join(GOALS_DIR, id);
+  let e = goalEntries.get(id);
+  const gst = statOrNull(path.join(dir, 'goal.json')), tst = statOrNull(path.join(dir, 'tasks.json')), est = statOrNull(path.join(dir, 'events.ndjson')), ast = statOrNull(path.join(dir, 'approvals'));
+  const gs = sigOf(gst), ts = sigOf(tst), es = sigOf(est), as = sigOf(ast);
+  if (!e) e = { goal: null, tasks: [], pending: [], events: [], gsig: '', tsig: '', esig: '', asig: '' };
+  if (gs !== e.gsig) { const g = readJsonSafe(path.join(dir, 'goal.json'), gst); if (g && typeof g === 'object' && !Array.isArray(g)) { e.goal = g; e.gsig = gs; } }
+  if (!e.goal) return null;
+  if (ts !== e.tsig) { const t = readJsonSafe(path.join(dir, 'tasks.json'), tst); if (Array.isArray(t)) { e.tasks = t.slice(0, TASKS_MAX).filter((x) => x && typeof x === 'object' && typeof x.id === 'string' && TAG_RE.test(x.id)); e.tsig = ts; } else if (!tst) { e.tasks = []; e.tsig = ts; } }
+  if (es !== e.esig) { e.events = tailEvents(path.join(dir, 'events.ndjson'), est, DETAIL_EVENTS).map(eventView); e.esig = es; }
+  if (as !== e.asig) { e.pending = pendingApprovals(path.join(dir, 'approvals')); e.asig = as; }
+  e.sig = e.gsig + '|' + e.tsig + '|' + e.esig + '|' + e.asig;
+  return e;
+}
+function summaryOf(id, e, now) {
+  const g = e.goal, o = objOr(g.orch), B = objOr(o.budgets), U = objOr(o.usage), GB = objOr(g.budget), T = e.tasks;
+  const startedMs = Number.isFinite(o.started_ms) ? o.started_ms : null, status = ctl(g.status, 20) || 'unknown';
+  const endMs = TERMINAL_GOAL.has(status) ? (Date.parse(g.updated_at) || now) : now;
+  return {
+    id, title: ctl(g.title, 120), status, repo_name: typeof o.repo === 'string' && o.repo ? ctl(path.basename(o.repo), 60) : '',
+    created_at: isoOrNull(g.created_at), updated_at: isoOrNull(g.updated_at),
+    plan_state: o.plan_state === 'supplied' ? 'planning' : PLAN_STATES.has(o.plan_state) ? o.plan_state : 'none',
+    paused_reason: o.paused_reason ? scrub(o.paused_reason, 160) : null, resume_at: isoOrNull(o.resume_at),
+    budget: { max_new_tokens: nn(B.max_new_tokens), used_new_tokens: nn(U.new_tokens), max_wall_s: nn(GB.max_wall_clock_s), used_wall_s: startedMs === null ? 0 : Math.max(0, Math.round((endMs - startedMs) / 1000)),
+      max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
+    tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
+    approvals_pending: e.pending.length, blocked_reason: g.blocked_reason ? scrub(g.blocked_reason, 200) : null,
+  };
+}
+function taskView(t, e, now) {
+  const o = objOr(t.orch), log = Array.isArray(o.attempt_log) ? o.attempt_log.filter((a) => a && typeof a === 'object') : [], last = log[log.length - 1];
+  let ran = 0, tok = 0;
+  for (const a of log) { const s = Date.parse(a.started_at); if (Number.isFinite(s)) { const en = a.ended_at ? Date.parse(a.ended_at) : (t.status === 'running' ? now : s); if (Number.isFinite(en)) ran += Math.max(0, en - s); } tok += nn(a.new_tokens); }
+  const check = o.phase === 'checking' ? 'checking' : last && last.checks_ok === true ? 'checks passed' : last && last.checks_ok === false ? 'checks failed' : t.status === 'done' ? 'checks passed' : null;
+  const lf = objOr(o.last_failure);
+  return { id: t.id, title: ctl(t.title, 120), status: ctl(t.status, 20), phase: o.phase ? ctl(o.phase, 20) : null, tier: o.model_tier ? ctl(o.model_tier, 20) : null,
+    depends_on: (Array.isArray(t.depends_on) ? t.depends_on : []).filter((d) => typeof d === 'string' && TAG_RE.test(d)).slice(0, 50),
+    attempts: nn(t.attempts), max_attempts: nn(t.max_attempts), branch: typeof o.branch === 'string' ? ctl(o.branch, 100) : null, ran_s: Math.round(ran / 1000),
+    new_tokens: o.tokens && Number.isFinite(o.tokens.new) ? nn(o.tokens.new) : tok, check_summary: check,
+    waiting_for_human: t.status === 'needs_review' || e.pending.includes(t.id),
+    ...(t.status !== 'done' && lf.kind ? { error: scrub(`${lf.kind}${lf.note ? ': ' + lf.note : ''}`, 160) } : {}) };
+}
+// refreshes the cached view (at most one directory scan per second)
+function goalsIndex() {
+  const now = Date.now();
+  if (now - goalsScanAt < 1000) return goalsView;
+  goalsScanAt = now;
+  try {
+    let names = [];
+    try { names = fs.readdirSync(GOALS_DIR).slice(0, GOAL_DIRS_SCAN_MAX).filter((n) => GID_RE.test(n)); } catch { names = []; }
+    const cand = [];
+    for (const n of names) { try { const d = path.join(GOALS_DIR, n); if (fs.lstatSync(d).isDirectory()) { const st = statOrNull(path.join(d, 'goal.json')); if (st) cand.push({ n, m: st.mtimeMs }); } } catch {} }
+    cand.sort((a, b) => b.m - a.m || (a.n < b.n ? -1 : 1));
+    const keep = new Map(), byId = new Map(), list = [];
+    let sig = '';
+    for (const { n } of cand.slice(0, GOAL_READ_MAX)) {
+      let e = null; try { e = loadGoalEntry(n); } catch { e = null; }
+      if (!e) continue;
+      goalEntries.set(n, e); keep.set(n, e); sig += n + '=' + e.sig + ';';
+      list.push(n); byId.set(n, e);
+    }
+    for (const k of [...goalEntries.keys()]) if (!keep.has(k)) goalEntries.delete(k);
+    goalsView = { list, byId, sig };
+  } catch { /* keep the previous view */ }
+  return goalsView;
+}
+// summaries (newest updated_at first). `now` drives the time-based fields only
+function goalSummaries(limit) {
+  const v = goalsIndex(), now = Date.now(), out = [];
+  for (const id of v.list) out.push(summaryOf(id, v.byId.get(id), now));
+  out.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '') || (a.id < b.id ? -1 : 1));
+  return out.slice(0, limit);
+}
+function goalDetail(id) {
+  const v = goalsIndex(), e = GID_RE.test(id) ? v.byId.get(id) : null;
+  if (!e) return null;
+  const now = Date.now();
+  return { ...summaryOf(id, e, now), description: ctl(e.goal.description, 500),
+    criteria: (Array.isArray(e.goal.success_criteria) ? e.goal.success_criteria : []).slice(0, 50).filter((c) => c && typeof c === 'object').map((c, i) => ({ id: ctl(c.id ?? 'c' + (i + 1), 40), text: ctl(c.text, 200), met: c.met === true })),
+    tasks: e.tasks.map((t) => taskView(t, e, now)), last_events: e.events.slice(-DETAIL_EVENTS) };
+}
+// repo roots stay internal: used only to group tagged workers under the goal's project
+const goalRepo = (id) => { const e = goalsIndex().byId.get(id); return e && typeof e.goal.orch?.repo === 'string' && path.isAbsolute(e.goal.orch.repo) ? e.goal.orch.repo : null; };
+const goalTitle = (id) => { const e = goalsIndex().byId.get(id); return e ? ctl(e.goal.title, 120) : null; };
+const withWorkers = (list, agents) => { const n = new Map(); for (const a of agents) if (a.goal_id && a.status === 'running') n.set(a.goal_id, (n.get(a.goal_id) || 0) + 1); return list.map((g) => ({ ...g, workers: n.get(g.id) || 0 })); };
+
 // ---------- fold ----------
 const FOLD_N = 5000, WIN_MS = 5 * 60 * 1000, OPEN_MAX_MS = 30 * 60 * 1000;
 const MAIN_RUN = new Set(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']); // main-session events that open a run segment
@@ -315,6 +480,7 @@ function fold(list, ref) {
     if (typeof r.cwd === 'string') { const c = r.cwd.trim().slice(0, 200); if (c) { let m = cw.get(sid); if (!m) cw.set(sid, m = new Map()); m.set(c, (m.get(c) || 0) + 1); } }
     const cp = normCwdp(r.cwdp); if (cp) { let m = cwp.get(sid); if (!m) cwp.set(sid, m = new Map()); m.set(cp, (m.get(cp) || 0) + 1); }
     if (name === 'SessionStart' && r.m && !s.mdl) s.mdl = r.m;
+    if (typeof r.gid === 'string' && TAG_RE.test(r.gid) && !s.gid) { s.gid = r.gid; if (typeof r.tid === 'string' && TAG_RE.test(r.tid)) s.tid = r.tid; } // worker tag set by the orchestrator engine
     const prevLast = s.last;
     s.last = t;
     const sub = r.agent_id ? subs.get(sid + ':' + r.agent_id) : null;
@@ -422,7 +588,12 @@ function fold(list, ref) {
   const projOf = new Map();
   const pOf = (sid) => {
     let p = projOf.get(sid);
-    if (!p) { p = projectInfo(sid, cwp.get(sid), cw.get(sid), C); projOf.set(sid, p); }
+    if (!p) {
+      const gs = sessions.get(sid), repo = gs && gs.gid ? goalRepo(gs.gid) : null; // tagged worker: the goal's repo is the project, not its worktree
+      if (repo) { const root = repo.replace(/\/+$/, '') || '/', base = path.basename(root); p = { key: 'p:' + root, root, base, alias: C.projects.get(root) || C.projects.get(base) || null }; }
+      else p = projectInfo(sid, cwp.get(sid), cw.get(sid), C);
+      projOf.set(sid, p);
+    }
     return p;
   };
   const sessLive = (s) => !(s.ended || ref - s.last > SESSION_TTL_S * 1000);
@@ -446,11 +617,11 @@ function fold(list, ref) {
       status: ek ? 'errored' : running ? 'running' : 'idle', error_kind: ek, recent_failures: recentF(s, ref), current_task: null, last_event_at: iso(s.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(s.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(s.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
-      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have) });
+      started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
   }
   for (const sub of subs.values()) {
     if (!subLive(sub)) continue;
-    const open = !sub.done, tv = toolView(sub), u = usageOf(sub.sid, sub.aid), sf = stuckOf(sub, sub.id, open, false), p = pOf(sub.sid);
+    const ps = sessions.get(sub.sid) || {}, open = !sub.done, tv = toolView(sub), u = usageOf(sub.sid, sub.aid), sf = stuckOf(sub, sub.id, open, false), p = pOf(sub.sid);
     // a stopped/killed subagent never sends SubagentStop: once silent past the stuck threshold show it as stalled, not running
     const silent = open && sf !== null, running = open && !silent, ek = errOf(sub, ref, sub.id);
     // a killed subagent never stops: its open run segment ends at its last event; ran_s sums every run segment
@@ -459,7 +630,7 @@ function fold(list, ref) {
       current_task: open ? 't-' + sub.id : null, last_event_at: iso(sub.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(sub.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(sub.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
-      started_at: iso(sub.start), ended_at: sub.done ? iso(sub.endMs) : silent ? iso(sub.last) : null, ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have) });
+      started_at: iso(sub.start), ended_at: sub.done ? iso(sub.endMs) : silent ? iso(sub.last) : null, ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(ps.gid ? { goal_id: ps.gid, ...(ps.tid ? { task_id: ps.tid } : {}), ...(goalTitle(ps.gid) ? { goal_title: goalTitle(ps.gid) } : {}) } : {}), });
     tasks.push({ id: 't-' + sub.id, goal_id: GOAL_ID, title: sub.title, assignee: sub.id, status: sub.done && sub.failed ? 'failed' : running ? 'running' : silent ? 'stalled' : 'done',
       depends_on: [], attempts: 1, max_attempts: 1, inputs: {}, output_contract: 'n/a (observed)', acceptance: ['Observed'],
       artifacts: [], created_at: sub.ts, updated_at: iso(sub.last) });
@@ -514,13 +685,14 @@ function assemble(list, ref, replay) {
     cost: f.cost, collisions: f.collisions, alerts: f.alerts.slice(-20),
   };
   if (replay) out.replay = true;
+  else out.goals = withWorkers(goalSummaries(STATE_GOALS_MAX), f.agents); // replay omits goals (not time-sliced)
   return out;
 }
 
 let liveCache = { key: '', v: null };
 function build() {
   ingest();
-  const now = Date.now(), key = ingestSig + ':' + Math.floor(now / 1000);
+  const now = Date.now(), key = ingestSig + ':' + Math.floor(now / 1000) + ':' + goalsIndex().sig;
   if (liveCache.key === key) return liveCache.v;
   const v = assemble(recs.slice(-FOLD_N), now, false);
   liveCache = { key, v };
@@ -529,7 +701,7 @@ function build() {
 let atCache = { key: '', v: null };
 function buildAt(atMs) {
   ingest();
-  const key = ingestSig + ':' + atMs;
+  const key = ingestSig + ':' + atMs + ':' + goalsIndex().sig;
   if (atCache.key === key) return atCache.v;
   let end = recs.length; while (end > 0 && Date.parse(recs[end - 1].ts) > atMs) end--;
   const v = assemble(recs.slice(Math.max(0, end - FOLD_N), end), atMs, true);
@@ -662,6 +834,14 @@ const server = http.createServer((req, res) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });
       const n = Number(new URL(req.url, 'http://localhost').searchParams.get('limit'));
       return send(res, 200, history(Number.isInteger(n) && n > 0 ? Math.min(n, 2000) : 200));
+    }
+    if (pathname === '/api/goals' || pathname.startsWith('/api/goals/')) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') { req.resume(); return send(res, 405, { error: 'method not allowed' }); }
+      if (pathname === '/api/goals') return send(res, 200, { goals: withWorkers(goalSummaries(GOAL_READ_MAX), build().agents) });
+      let id; try { id = decodeURIComponent(pathname.slice('/api/goals/'.length)); } catch { return send(res, 400, { error: 'bad id' }); }
+      if (!GID_RE.test(id)) return send(res, 404, { error: 'not found' });
+      const d = goalDetail(id);
+      return d ? send(res, 200, withWorkers([d], build().agents)[0]) : send(res, 404, { error: 'not found' });
     }
     if (pathname === '/api/control') { req.resume(); return send(res, 405, { ok: false, error: 'monitor is read-only' }); }
     if (pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });

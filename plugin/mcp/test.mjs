@@ -18,10 +18,14 @@ const state = {
   ],
 };
 const seen = [];
+let goalsOn = true;
+const goalSum = { id: 'g-1', title: 'Goal one', status: 'active', repo_name: 'repo', plan_state: 'approved', paused_reason: null, resume_at: null, budget: { max_new_tokens: 1000, used_new_tokens: 10, max_wall_s: 3600, used_wall_s: 90, max_parallel: 3, running: 1, max_attempts: 3 }, tasks_total: 2, tasks_done: 1, tasks_failed: 0, approvals_pending: 1, workers: 1 };
 const fake = http.createServer((req, res) => {
   seen.push(req.url);
   res.setHeader('content-type', 'application/json');
   if (req.url.startsWith('/api/history')) return res.end(JSON.stringify({ first_ts: 'a', last_ts: 'b', count: 2, markers: [{ ts: 'a' }, { ts: 'b' }] }));
+  if (req.url === '/api/goals' && goalsOn) return res.end(JSON.stringify({ goals: [goalSum] }));
+  if (req.url === '/api/goals/g-1' && goalsOn) return res.end(JSON.stringify({ ...goalSum, description: 'desc', criteria: [{ id: 'c1', text: 'tests pass', met: false }], tasks: [{ id: 't1', title: 'T', status: 'running', phase: 'working', tier: 'haiku', depends_on: [], attempts: 1, max_attempts: 3, branch: 'aos/g-1/t1', ran_s: 65, new_tokens: 1234, check_summary: null, waiting_for_human: true }], last_events: [{ type: 'task.started', ts: '2026-01-01T00:00:00Z', task_id: 't1', text: 'tier=haiku' }] }));
   if (req.url.startsWith('/api/state')) return res.end(JSON.stringify(state));
   res.statusCode = 404; res.end('{}');
 });
@@ -60,7 +64,7 @@ ok(r.result.protocolVersion === '2025-11-25', 'fallback version');
 ok(Object.keys((await c.call('ping')).result).length === 0, 'ping');
 r = await c.call('tools/list');
 const names = r.result.tools.map((t) => t.name).sort();
-ok(names.join() === 'aos_agent,aos_alerts,aos_conflicts,aos_cost,aos_history,aos_state_at,aos_status', 'tool names');
+ok(names.join() === 'aos_agent,aos_alerts,aos_conflicts,aos_cost,aos_goals,aos_history,aos_state_at,aos_status', 'tool names');
 ok(r.result.tools.every((t) => t.annotations.readOnlyHint === true && t.inputSchema.type === 'object'), 'annotations/schema');
 
 r = await tool(c, 'aos_status', {});
@@ -127,6 +131,19 @@ ok(r.result.isError === true && /does not report projects/.test(txt(r)), 'filter
 r = await tool(c, 'aos_agent', { id: 'a1' });
 ok(!/^project:/m.test(txt(r)), 'no project line on older monitor');
 
+r = await tool(c, 'aos_goals', {});
+ok(!r.result.isError && /^goals: 1$/m.test(txt(r)) && /g-1 \| Goal one \| active \| repo repo \| plan approved \| tasks 1\/2 done, 0 failed \| running 1\/3 \| tokens 10\/1,000 \| wall 1m\/1h 00m \| approvals pending 1 \| workers 1/.test(txt(r)), 'goals list: ' + txt(r));
+r = await tool(c, 'aos_goals', { id: 'g-1' });
+ok(/criteria:\n  - \[ \] c1 tests pass/.test(txt(r)) && /t1 \| running\/working \| haiku \| attempt 1\/3 \| 1,234 tok \| ran 1m .*WAITING FOR HUMAN/.test(txt(r)) && /task\.started t1 tier=haiku/.test(txt(r)) && seen.includes('/api/goals/g-1'), 'goals detail: ' + txt(r));
+r = await tool(c, 'aos_goals', { id: 'nope' });
+ok(r.result.isError === true && /No goal with id "nope"\. Known: g-1/.test(txt(r)), 'goals unknown id');
+for (const bad of ['../x', 'a/b', 'g 1', '', 'x'.repeat(65), '.hidden']) { r = await tool(c, 'aos_goals', { id: bad }); ok(r.error?.code === -32602, 'goals bad id ' + bad); }
+r = await tool(c, 'aos_goals', { id: 5 }); ok(r.error?.code === -32602, 'goals id type');
+r = await tool(c, 'aos_goals', { limit: 1 }); ok(r.error?.code === -32602, 'goals unknown arg');
+goalsOn = false;
+r = await tool(c, 'aos_goals', {}); ok(r.result.isError === true && /does not report goals/.test(txt(r)), 'goals: monitor without endpoint');
+r = await tool(c, 'aos_goals', { id: 'g-1' }); ok(r.result.isError === true && /does not report goals/.test(txt(r)), 'goals detail: monitor without endpoint');
+goalsOn = true;
 r = await tool(c, 'nope', {});
 ok(r.error?.code === -32602, 'unknown tool');
 r = await c.call('bogus/method');

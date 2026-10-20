@@ -57,6 +57,7 @@ const tpmStr = (n) => { if (!hasNum(n)) return null; return n >= 1e6 ? (n / 1e6)
 // monitor fields from an older monitor are absent: returns '' so the line is unchanged
 const runPart = (a) => { const r = durStr(a.ran_s), t = tpmStr(a.tok_per_min); return (r ? ` | ran ${r}` : '') + (t ? ` | ${t} tok/min` : ''); };
 
+const goalLine = (g) => { const b = g.budget || {}; return `${trunc(g.id, 64)} | ${trunc(g.title, 80)} | ${trunc(g.status, 20)} | repo ${trunc(g.repo_name, 60) || 'n/a'} | plan ${g.plan_state ?? 'none'} | tasks ${num(g.tasks_done)}/${num(g.tasks_total)} done, ${num(g.tasks_failed)} failed | running ${num(b.running)}/${num(b.max_parallel)} | tokens ${fmt(num(b.used_new_tokens))}/${fmt(num(b.max_new_tokens))} | wall ${durStr(b.used_wall_s) ?? 'n/a'}/${durStr(b.max_wall_s) ?? 'n/a'} | approvals pending ${num(g.approvals_pending)}${hasNum(g.workers) ? ' | workers ' + g.workers : ''}`; };
 function toolStr(t) {
   if (!t) return '-';
   return `${t.name ?? '?'}${t.summary ? ' ' + trunc(t.summary, 80) : ''}`;
@@ -231,6 +232,32 @@ const TOOLS = [
     },
   },
   {
+    name: 'aos_goals',
+    description: 'Orchestrator goals (read-only): without id, a list of goals with status, plan state, tasks, budget use and pending approvals; with id, one goal in detail (criteria, tasks, newest events). Empty when no orchestrator is in use.',
+    inputSchema: obj({ id: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$', description: 'Goal id as shown by the list.' } }),
+    async run(a) {
+      const unsupported = () => new ToolError('This AOS monitor does not report goals (no /api/goals endpoint): update the monitor');
+      const missing = (e) => e instanceof ToolError && /HTTP 404/.test(e.message);
+      const list = async () => { try { const r = await api('/api/goals'); return tools_(r?.goals); } catch (e) { if (missing(e)) throw unsupported(); throw e; } };
+      if (a.id === undefined) {
+        const g = await list();
+        return `goals: ${g.length}\n` + g.slice(0, 50).map(goalLine).join('\n');
+      }
+      let d;
+      try { d = await api('/api/goals/' + encodeURIComponent(a.id)); } catch (e) {
+        if (!missing(e)) throw e;
+        const g = await list();
+        throw new ToolError(`No goal with id ${JSON.stringify(a.id)}. Known: ${g.map((x) => x.id).slice(0, 20).join(', ') || 'none'}`);
+      }
+      const L = [goalLine(d), ...(d.description ? ['description: ' + trunc(d.description, 300)] : []),
+        `plan: ${d.plan_state ?? 'none'}${d.blocked_reason ? ' | blocked: ' + trunc(d.blocked_reason, 160) : ''}${d.paused_reason ? ' | paused: ' + trunc(d.paused_reason, 160) : ''}${d.resume_at ? ' | resume_at ' + d.resume_at : ''}`,
+        'criteria:', ...tools_(d.criteria).slice(0, 50).map((c) => `  - [${c.met ? 'x' : ' '}] ${trunc(c.id, 40)} ${trunc(c.text, 160)}`),
+        'tasks:', ...tools_(d.tasks).slice(0, 200).map((t) => `  - ${trunc(t.id, 64)} | ${trunc(t.status, 20)}${t.phase ? '/' + trunc(t.phase, 20) : ''} | ${t.tier ?? '-'} | attempt ${num(t.attempts)}/${num(t.max_attempts)} | ${fmt(num(t.new_tokens))} tok | ran ${durStr(t.ran_s) ?? 'n/a'}${t.depends_on?.length ? ' | after ' + tools_(t.depends_on).slice(0, 10).join(',') : ''}${t.check_summary ? ' | ' + trunc(t.check_summary, 40) : ''}${t.waiting_for_human ? ' | WAITING FOR HUMAN' : ''}${t.error ? ' | error: ' + trunc(t.error, 160) : ''}`),
+        'last_events:', ...tools_(d.last_events).slice(-25).map((e) => `  - ${trunc(e.ts, 30)} ${trunc(e.type, 60)}${e.task_id ? ' ' + trunc(e.task_id, 64) : ''}${e.text ? ' ' + trunc(e.text, 160) : ''}`)];
+      return L.join('\n');
+    },
+  },
+  {
     name: 'aos_state_at',
     description: 'Replay summary of the monitor state at a past ISO-8601 timestamp.',
     inputSchema: obj({ at: { type: 'string', minLength: 10, maxLength: 40, description: 'ISO-8601 timestamp, e.g. 2026-01-01T12:00:00Z.' } }, ['at']),
@@ -255,6 +282,7 @@ function validate(schema, args) {
     } else if (p.type === 'string') {
       if (typeof v !== 'string') return `"${k}" must be a string`;
       if (v.length < (p.minLength ?? 0) || v.length > (p.maxLength ?? Infinity)) return `"${k}" length out of range`;
+      if (p.pattern && !new RegExp(p.pattern).test(v)) return `"${k}" has an invalid format`;
     }
   }
   return null;

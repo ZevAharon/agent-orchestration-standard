@@ -44,6 +44,11 @@ function main() {
   if (p.session_id) rec.sid = clean(p.session_id, 8);
   if (p.cwd) rec.cwd = clean(path.basename(String(p.cwd)), 40);
   const cwdp = cwdPath(p.cwd); if (cwdp) rec.cwdp = cwdp; // full cwd, used only locally to group sessions by project root
+  // goal/task tags set by the orchestrator engine in the worker's environment: short sanitized ids only (no other env value is ever read)
+  const tag = (v) => (typeof v === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(v) ? v : null);
+  const gid = tag(process.env.AOS_GOAL_ID), tid = tag(process.env.AOS_TASK_ID);
+  if (gid) rec.gid = gid;
+  if (tid) rec.tid = tid;
   if (p.tool_name) rec.tool = clean(p.tool_name, 40);
   if (p.agent_id) rec.agent_id = clean(p.agent_id, 40);
   if (p.agent_type) rec.agent_type = clean(p.agent_type, 40);
