@@ -87,24 +87,7 @@ body{font-feature-settings:normal}
 .segs{gap:2px}
 .segs i{height:2px;border-radius:0;background:var(--line-2)}
 .segs i.met{box-shadow:none}
-.btn-group{background:none;border:0;box-shadow:none;padding:0;gap:2px}
-.btn,.btn-group .btn{background:none!important;border:0;box-shadow:none;border-radius:3px;height:30px;font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.btn:hover:not(:disabled){background:var(--hover)!important;color:var(--accent-hi)}
-.btn:active:not(:disabled){background:rgba(var(--accent-rgb)/.16)!important}
-.btn.danger{color:rgb(var(--errored-rgb))}
-.btn.danger:hover:not(:disabled){background:rgba(var(--errored-rgb)/.12)!important;color:rgb(var(--errored-rgb))}
-.btn.danger.solid{background:rgb(var(--errored-rgb))!important;color:#14030a}
-:root[data-theme=light] .btn.danger.solid{color:#fff}
-@media (prefers-color-scheme:light){:root:not([data-theme]) .btn.danger.solid{color:#fff}}
-.cmdbar{background:none;border:0;border-bottom:1px solid var(--line-2);border-radius:0;box-shadow:none;padding:0 2px 0 4px}
-.cmdbar:focus-within{border-bottom-color:var(--accent);box-shadow:none}
-.cmdbar input{font:12.5px/1 var(--mono)}
-.kbd{background:none;border-color:var(--line);border-radius:3px}
-.send{background:none;color:var(--accent);border-radius:3px}
-.send:hover:not(:disabled){background:var(--hover);filter:none}
 .icon-btn{border:0;border-radius:3px}
-.confirm{border-radius:3px;box-shadow:none}
-.confirm p{font:600 12px/1.5 var(--mono);letter-spacing:.04em;text-transform:uppercase}
 .toast{border-radius:3px;box-shadow:none;font:600 12px/1.45 var(--mono);letter-spacing:.05em;text-transform:uppercase}
 .toast-error::before{box-shadow:none}
 
@@ -219,8 +202,7 @@ table.ev{font-family:var(--mono);font-size:12px}
 
 /* ================= v5: header status, quiet controls, dock polish ================= */
 .top{gap:6px 18px;flex-wrap:nowrap;padding:8px 20px;min-height:52px}
-.toolbar[hidden],.btn[hidden],.live-ind[hidden],.confirm[hidden]{display:none!important}
-.toolbar{flex:none;flex-wrap:nowrap;gap:14px}
+.live-ind[hidden]{display:none!important}
 .goalbar{flex:1 1 auto;min-width:0;gap:14px}
 .goal-count{font-size:11px;letter-spacing:.04em;color:var(--muted)}
 .goal-count.sum{text-transform:none;opacity:.9}
@@ -248,26 +230,10 @@ table.ev{font-family:var(--mono);font-size:12px}
 #aos-clock{display:none}
 
 /* buttons: text only */
-.btn-group{display:flex;gap:6px}
-.btn{padding:0 10px;gap:0;cursor:pointer;transition:color .15s,background .15s}
-.btn svg{display:none}
-.btn:disabled{opacity:.3;cursor:not-allowed}
-.btn:focus-visible{outline:1px solid var(--accent-hi);outline-offset:1px}
-.btn.danger.solid{height:28px}
-.btn:active:not(:disabled){transform:none}
-.cmdbar{min-width:230px;height:30px}
-.cmdbar .cmd-ic{display:none}
-.cmdbar input{padding:0 4px}
-.cmdbar input::placeholder{color:var(--muted);opacity:.8}
-.send{width:26px;height:26px}
-.confirm{background:var(--glass-strong);border:0;border-top:1px solid rgba(var(--errored-rgb)/.6);border-bottom:1px solid var(--line);border-radius:0;padding:12px 16px;gap:6px 14px;flex-wrap:nowrap;align-items:center;max-width:none;left:auto;right:20px;animation:none}
-.confirm p{margin:0;flex:1 1 auto;font-size:11px;letter-spacing:.08em;line-height:1.4}
-.confirm .btn{flex:none}
 
 /* toasts: hairline text strips */
 .toast{background:var(--glass-strong);border:0;border-bottom:1px solid var(--line-2);border-radius:0;padding:9px 18px;font-size:11px;letter-spacing:.08em;color:var(--text-2)}
 .toast-error{border-bottom-color:rgba(var(--errored-rgb)/.7);box-shadow:none;color:var(--text)}
-.toast-info{bottom:28px}
 
 /* stage text */
 .empty{font:600 11px/1.5 var(--mono);letter-spacing:.14em;text-transform:uppercase}
@@ -316,8 +282,6 @@ input[type=search]::placeholder{color:var(--muted);opacity:.7}
 
 @media (max-width:900px){
   .clock .clk-u{display:none}
-  .toolbar{gap:8px}
-  .cmdbar{min-width:150px}
 }
 @media (max-width:720px){
   .top{flex-wrap:wrap;padding:10px 14px 8px;gap:6px 12px;min-height:0}
@@ -328,11 +292,6 @@ input[type=search]::placeholder{color:var(--muted);opacity:.7}
   .clock{order:3;border-left:0;padding-left:0;flex-direction:row;gap:0}
   .clock .clk-t{font-size:10px}
   .goalbar{order:4;flex:1 1 100%;height:34px;padding:0;gap:10px}
-  .toolbar{order:5;flex:1 1 100%;gap:8px}
-  .btn-group .btn span{display:inline}
-  .btn-group .btn{padding:0 8px}
-  .cmdbar{flex:1;min-width:0}
-  .confirm{left:14px;right:14px;flex-wrap:wrap}
   .live-ind span{display:none}
   .live-ind::after{content:none}
   .filterbar{gap:14px;flex-wrap:wrap}
@@ -351,9 +310,6 @@ input[type=search]::placeholder{color:var(--muted);opacity:.7}
 .ev-heartbeat{--c-rgb:var(--idle-rgb)}
 .ev-control,.ev-human{--c-rgb:var(--running-rgb)}
 .ev-bad{--c-rgb:var(--errored-rgb)}
-.btn.danger.solid{color:#1a0a08}
-:root[data-theme=light] .btn.danger.solid{color:#fff}
-@media (prefers-color-scheme:light){:root:not([data-theme]) .btn.danger.solid{color:#fff}}
 .logo rect{fill:none;stroke:var(--accent);stroke-width:1}
 
 /* v5: no heartbeat ring; solid core orb with a soft brass halo (pulse is expressed by particles) */
@@ -421,9 +377,6 @@ input[type=search]::placeholder{color:var(--muted);opacity:.7}
 .live-ind span{color:var(--text-2)}
 .clock{font-size:11.5px;color:var(--text-2)}
 .clock .clk-u{font-size:11px;opacity:1;color:var(--muted)}
-.btn,.btn-group .btn{font-size:12px}
-.cmdbar input{font-size:13px}
-.cmdbar input::placeholder,input[type=search]::placeholder{color:var(--muted);opacity:1}
 .tab{font-size:12.5px}
 .count{font-size:12.5px;opacity:1;color:var(--text-2)}
 .dock-sum{font-size:11.5px;color:var(--text-2)}

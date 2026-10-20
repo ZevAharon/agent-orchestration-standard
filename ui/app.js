@@ -60,10 +60,9 @@
 (function () {
   var POLL_MS = 2000, NS = 'http://www.w3.org/2000/svg', CX = 500, CY = 300, GW = 1000, GH = 600;
   var TSTAT = ['running', 'needs_review', 'stalled', 'ready', 'pending', 'failed', 'done', 'cancelled'];
-  var PH = 'Send a note to the orchestrator…', WHY_LIVE = 'Read-only in live mode';
   var state = null, prev = null, lastOk = 0, failed = false, filterVal = '', searchVal = '', knownTypes = {}, showPrompts = false;
   var selected = null, nodes = {}, chips = {}, edges = {}, deps = {}, depInfo = {}, orchEl = null, seenSeq = null, lastFocus = null;
-  var evSig = '', taskSig = '', openSeqs = {}, toastTimer = null, LVL = 0;
+  var evSig = '', taskSig = '', openSeqs = {}, LVL = 0;
   var REDUCED = false;
   try { REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches); } catch (e0) {}
   /* layout is static now: user pins of older builds are purged */
@@ -131,10 +130,6 @@
   function setLabel(valueId, txt) {
     var p = $(valueId).parentNode, l = p && p.querySelector('.stat-l');
     if (l && l.textContent !== txt) l.textContent = txt;
-  }
-  function lockCtl(e, off, why) {
-    e.disabled = off; e.setAttribute('aria-disabled', String(!!off));
-    if (off && why) e.setAttribute('title', why); else e.removeAttribute('title');
   }
 
   /* ---------- optional per-agent live fields (tool feed, stuck, collisions) ---------- */
@@ -1582,32 +1577,13 @@
     Object.keys(hubEls).forEach(function (k) { hubEls[k].classList.toggle('sel', selected === k); hubEls[k]._cls = hubEls[k].getAttribute('class'); });
   }
 
-  /* ---------- controls / state ---------- */
+  /* ---------- state (read-only view) ---------- */
   function renderControls() {
-    var g = state && state.goal, hb = state && state.heartbeat, live = isLive();
-    var term = !g || ['achieved', 'failed', 'cancelled'].indexOf(g.status) >= 0 || (hb && hb.status === 'stopped');
-    var paused = hb && hb.status === 'paused';
-    var why = live ? WHY_LIVE : '';
+    var live = isLive();
     document.body.classList.toggle('mode-live', live);
-    $('toolbar').hidden = live; $('live-ind').hidden = !live;
-    if (live) $('confirm').hidden = true;
-    $('btn-pause').hidden = !!paused; $('btn-resume').hidden = !paused;
-    lockCtl($('btn-pause'), term || failed || live, why);
-    lockCtl($('btn-resume'), term || failed || live, why);
-    lockCtl($('btn-cancel'), term || failed || live, why);
-    /* the note stays focusable in live mode (so '/' still works) but read-only; submit is blocked */
-    var note = $('note'), send = $('note-form').querySelector('.send');
-    note.readOnly = live; note.disabled = live || failed || !g;
-    note.placeholder = live ? WHY_LIVE : PH;
-    note.setAttribute('aria-disabled', String(live || failed || !g));
-    if (live) note.setAttribute('title', WHY_LIVE); else note.removeAttribute('title');
-    lockCtl(send, live || failed || !g, why);
+    $('live-ind').hidden = !live;
   }
   function setBanner(msg) { var b = $('banner'); if (msg) { if (b.hidden || b.textContent !== msg) { b.textContent = msg; b.hidden = false; } } else b.hidden = true; }
-  function toast(msg) {
-    var t = $('ctl-msg'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove('show'); }, 3800);
-  }
 
   function render() {
     renderGoal(state.goal); renderGraph(); renderStats(); renderEvents(state.events); renderTasks(state.tasks); renderDockSum();
@@ -1661,34 +1637,13 @@
     selectProject: function (id) { openAgent(String(id).indexOf('p:') === 0 ? id : 'p:' + id); },
     isLive: function () { return !override; }
   };
-  function control(action, note) {
-    if (isLive()) { toast('Read-only in live mode: ' + action + ' not sent.'); return Promise.resolve(false); }
-    toast('Sending ' + action + '…');
-    var body = { action: action }; if (note) body.note = note;
-    return fetch('/api/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); toast(action + ' sent.'); poll(); return true; })
-      .catch(function (e) { toast('Failed to send ' + action + ': ' + e.message); return false; });
-  }
-
-  $('btn-pause').addEventListener('click', function () { control('pause'); });
-  $('btn-resume').addEventListener('click', function () { control('resume'); });
-  $('btn-cancel').addEventListener('click', function () { $('confirm').hidden = false; $('confirm-no').focus(); });
-  $('confirm-no').addEventListener('click', function () { $('confirm').hidden = true; $('btn-cancel').focus(); });
-  $('confirm-yes').addEventListener('click', function () { $('confirm').hidden = true; control('cancel'); });
-  $('confirm').addEventListener('keydown', function (e) { if (e.key === 'Escape') { $('confirm').hidden = true; $('btn-cancel').focus(); } });
-  $('note-form').addEventListener('submit', function (e) {
-    e.preventDefault(); var v = $('note').value.trim(); if (!v) return;
-    control('note', v).then(function (ok) { if (ok) $('note').value = ''; });
-  });
   $('ev-filter').addEventListener('change', function (e) { filterVal = e.target.value; if (state) renderEvents(state.events); });
   if ($('ev-prompts')) $('ev-prompts').addEventListener('click', function () { showPrompts = !showPrompts; if (state) renderEvents(state.events); });
   $('ev-search').addEventListener('input', function (e) { searchVal = e.target.value.trim(); if (state) renderEvents(state.events); });
   $('goalbar').addEventListener('click', function () { openDrawer('orch'); });
   $('dr-close').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && selected && $('confirm').hidden) closeDrawer();
-    var tag = e.target && e.target.tagName;
-    if (e.key === '/' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !$('note').disabled && !e.metaKey && !e.ctrlKey) { e.preventDefault(); $('note').focus(); }
+    if (e.key === 'Escape' && selected) closeDrawer();
   });
   function setDock(open, save) {
     $('dock-toggle').setAttribute('aria-expanded', String(open)); $('dock').classList.toggle('collapsed', !open);

@@ -50,10 +50,16 @@
   }
   function fmtResume(v) {
     var t = tsOf(v); if (!isFinite(t)) return '';
-    var d = new Date(t), now = new Date(), same = d.toDateString() === now.toDateString();
-    return 'resumes ' + (same ? hm(t) : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm(t));
+    var d = new Date(t), now = new Date(), same = d.toDateString() === now.toDateString(), abs;
+    try {
+      abs = d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).replace(',', '');
+      if (same) abs = abs.replace(/^\d+ \w+ /, '');
+    } catch (e) { abs = (same ? '' : d.getDate() + '/' + (d.getMonth() + 1) + ' ') + hm(t); }
+    var ms = t - now.getTime(), rel = '';
+    if (ms > 0) { var mins = Math.round(ms / 60000), h = Math.floor(mins / 60); rel = 'in ' + (h ? h + 'h ' + (mins % 60) + 'm' : mins + 'm') + ' \u00b7 '; }
+    return 'resumes ' + rel + abs;
   }
-  function limitText(g) { var rs = fmtResume(g.resume_at).replace(/^resumes /, ''); return 'Paused by plan limit' + (rs ? ' \u2014 resumes at ' + rs : ''); }
+  function limitText(g) { var rs = fmtResume(g.resume_at).replace(/^resumes /, ''); return 'Paused by plan limit' + (rs ? ' \u2014 resumes ' + rs : ''); }
   function baseName(p) { var parts = String(p || '').split('/').filter(Boolean); return parts.length ? parts[parts.length - 1] : ''; }
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
   function arr(x) { return Array.isArray(x) ? x : []; }
