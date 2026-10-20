@@ -11,7 +11,7 @@ AOS        := node scripts/aos.mjs
 ENSURE     := CLAUDE_PLUGIN_ROOT="$(REPO)/plugin" CLAUDE_PLUGIN_DATA="$(DATA)" AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
 
 .DEFAULT_GOAL := help
-.PHONY: help install uninstall build validate test doctor start stop restart open demo link unlink statusline statusline-off notifier screenshots
+.PHONY: help install uninstall build validate test doctor start stop restart open link unlink statusline statusline-off notifier screenshots
 
 help: ## Show this list
 	@echo "AOS: Claude Code live dashboard"; echo
@@ -50,14 +50,12 @@ validate: ## Validate the plugin manifest with the Claude CLI
 	@set -o pipefail; claude plugin validate ./plugin 2>&1 | tail -2
 
 test: ## Run every test suite
-	@set -o pipefail; echo "==> conformance"; node conformance/validate.mjs --selftest | tail -1
 	@set -o pipefail; echo "==> terminal dashboard"; node cli/test.mjs | tail -1
 	@set -o pipefail; echo "==> MCP server"; node plugin/mcp/test.mjs | tail -1
 	@set -o pipefail; echo "==> notifier"; node plugin/notify/test.mjs | tail -1
 	@echo "==> theme contrast"; out="$$(node ui/theme-tokens.test.mjs)" || { echo "$$out"; exit 1; }; echo "$$out" | head -1
 	@echo "==> streams quiet mode"; out="$$(node ui/streams-quiet.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
 	@echo "==> monitor goals + hook tagging"; out="$$(node --test tests-monitor/*.test.mjs 2>&1)" || { echo "$$out" | grep -E "^not ok|error:" | head -20; exit 1; }; echo "$$out" | grep -E '^# (pass|fail)' | tr '\n' ' '; echo
-	@echo "==> orchestrator engine (fake claude)"; out="$$(node --test orchestrator/test/*.test.mjs 2>&1)" || { echo "$$out" | grep -E "^not ok|error:" | head -20; exit 1; }; echo "$$out" | grep -E '^# (pass|fail)' | tr '\n' ' '; echo
 
 doctor: ## Check the whole setup and say what to fix
 	@$(AOS) doctor
@@ -72,9 +70,6 @@ restart: stop start ## Restart the monitor (needed after `make build` changes mo
 
 open: ## Open the web dashboard
 	@open http://127.0.0.1:$(PORT) 2>/dev/null || xdg-open http://127.0.0.1:$(PORT)
-
-demo: ## Run the simulated AOS-1 demo (reference server) on :4317
-	node server.mjs
 
 link: ## Put `aos-dash` on your PATH (symlink in ~/.local/bin)
 	@$(AOS) link

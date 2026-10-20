@@ -1,8 +1,8 @@
 # AOS-1: Agent Orchestration Standard
 
-AOS-1 is a minimal, runtime-agnostic contract for orchestrating several AI agents toward one standing **Goal**. A periodic **Heartbeat** re-evaluates the Goal, reaps stalled work, plans, dispatches ready Tasks, and enforces budgets until the Goal is achieved, blocked, or cancelled. All state lives in plain files, and an append-only event log is the source of truth. The normative text is in [SPEC.md](SPEC.md).
+AOS-1 is a minimal, runtime-agnostic contract for orchestrating several AI agents toward one standing **Goal**. A periodic **Heartbeat** re-evaluates the Goal, reaps stalled work, plans, dispatches ready Tasks, and enforces budgets until the Goal is achieved, blocked, or cancelled. All state lives in plain files, and an append-only event log is the source of truth. The normative text is in the [aos-1-spec repo](https://github.com/tomtomsatnav/aos-1-spec).
 
-The repo holds the spec, JSON Schemas, a zero-dependency conformance validator, a reference server and heartbeat runner, and a read-only live dashboard for Claude Code sessions.
+This repo is the **dashboard**: a read-only live view of Claude Code sessions and AOS-1 goals. The spec lives in [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec); the experimental orchestrator engine lives in [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator).
 
 <p align="center">
   <a href="docs/screenshots.md"><img src="docs/hero.gif" alt="AOS live dashboard: a project graph of agents with streaming activity" width="900"></a><br>
@@ -21,23 +21,19 @@ make                # lists every target
 
 Then start a new Claude Code session and open http://127.0.0.1:4318. Local-only, read-only; hooks log event and tool names, never prompts or file contents. Status: personal project, macOS-first. [MIT License](LICENSE).
 
-## Quick usage of the spec tools
+## GOALS panel
 
-```sh
-node server.mjs                       # reference dashboard + API at http://127.0.0.1:4317
-node conformance/validate.mjs         # validate ./state against the schemas and the spec's MUSTs
-node conformance/validate.mjs --selftest
-```
+The GOALS panel shows orchestrator goals from disk, but approving, pausing and starting goals needs the control server from [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) (`aos-orch serve`, port 4319). Without it the panel is read-only. The files the dashboard reads are described in [docs/orch-state-contract.md](docs/orch-state-contract.md).
 
 ## Docs
 
-- [SPEC.md](SPEC.md): normative specification; [ROADMAP.md](ROADMAP.md): status and known limits
+- [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec): normative specification, schemas, conformance validator, reference runner
+- [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator): orchestrator engine and its design doc
 - [docs/dashboard.md](docs/dashboard.md): the Claude Code dashboard, highlights, debugging, security and threat model
 - [docs/architecture.md](docs/architecture.md): how events flow from hooks to the UI
-- [docs/reference-runner.md](docs/reference-runner.md): server, validator checks, directory map, dispatch config, keeping it running
 - [docs/screenshots.md](docs/screenshots.md): screenshot gallery
 - [docs/overhead.md](docs/overhead.md): measured monitor CPU and memory
-- [docs/orchestrator-design.md](docs/orchestrator-design.md): orchestrator engine design
+- [docs/orch-state-contract.md](docs/orch-state-contract.md): the on-disk layout the dashboard reads from an orchestrator
 - [plugin/README.md](plugin/README.md): plugin details and the exact privacy field list
 
 ## Contributing
