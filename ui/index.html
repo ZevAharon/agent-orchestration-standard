@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0a0b10">
-<title>AOS-1 Agent Graph</title>
+<title>AOS Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%236d5efc'/%3E%3Ccircle cx='16' cy='16' r='5' fill='white'/%3E%3C/svg%3E">
 <script>/* no-flash theme: apply the saved choice before first paint (AUTO = no attribute) */
 try{var t=localStorage.getItem('aos.theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
@@ -30,7 +30,7 @@ try{var t=localStorage.getItem('aos.theme');if(t==='light'||t==='dark')document.
     <h1>AOS-1</h1>
   </div>
 
-  <button id="goalbar" class="goalbar" type="button" aria-label="Goal and success criteria. Open orchestrator details">
+  <button id="goalbar" class="goalbar" type="button" aria-label="Goal and success criteria. Open goal details">
     <span id="goal-title" class="goal-title skeleton-text">Loading…</span>
     <span id="goal-status" class="pill" hidden></span>
     <span id="goal-segs" class="segs" role="progressbar" aria-label="Success criteria met" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></span>
@@ -54,7 +54,7 @@ try{var t=localStorage.getItem('aos.theme');if(t==='light'||t==='dark')document.
     <div class="stat"><span class="stat-l">Uptime</span><span class="stat-v tnum" id="st-uptime"><i class="skeleton-text sk-s"></i></span></div>
   </div>
 
-  <svg id="graph" viewBox="90 70 820 480" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Crew graph: orchestrator and crew">
+  <svg id="graph" viewBox="90 70 820 480" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Agent graph: Claude Code sessions and subagents">
     <defs>
       <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
       <filter id="glow-s" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5"/></filter>

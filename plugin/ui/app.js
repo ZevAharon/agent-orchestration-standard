@@ -178,8 +178,8 @@
     if (live) {
       var ag = state.agents || [], rn = ag.filter(function (a) { return a.status === 'running'; }).length, md0 = MODEL || buildModel();
       $('goal-count').textContent = (md0.implicit ? '' : cnt(md0.hubs.length, 'project', 'projects') + ' · ') + cnt(ag.length, 'agent', 'agents') + ' · ' + rn + ' running';
-      $('goalbar').setAttribute('aria-label', (g.title || 'Goal') + '. ' + $('goal-count').textContent + '. Open orchestrator details');
-    } else { $('goal-count').textContent = cs.length ? met + '/' + cs.length : 'no criteria'; $('goalbar').setAttribute('aria-label', 'Goal and success criteria. Open orchestrator details'); }
+      $('goalbar').setAttribute('aria-label', (g.title || 'Goal') + '. ' + $('goal-count').textContent + '. Open goal details');
+    } else { $('goal-count').textContent = cs.length ? met + '/' + cs.length : 'no criteria'; $('goalbar').setAttribute('aria-label', 'Goal and success criteria. Open goal details'); }
   }
 
   /* ---------- stat strip ---------- */

@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: "The AOS dashboard: a read-only live view of agent orchestration (agents, tasks, cost, file conflicts, alerts, history) served at http://127.0.0.1:4318. Use when the user asks about the AOS dashboard, live agent status, what agents are doing, session cost, file collisions between agents, or how to open or disable the monitor."
+description: "The AOS dashboard: a read-only live monitor of Claude Code agents (agents, tasks, cost, file conflicts, alerts, history) served at http://127.0.0.1:4318. Use when the user asks about the AOS dashboard, live agent status, what agents are doing, session cost, file collisions between agents, or how to open or disable the monitor."
 ---
 
 # AOS dashboard

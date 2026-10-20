@@ -15,4 +15,6 @@ ok('header buttons are icon-only', /display:none/.test(rule('.streams-btn .theme
 ok('touch targets >= 36px, drawer close 44px', /min-height:36px/.test(rule('.orch-hbtn,.theme-btn,.streams-btn,.live-ind,.aos-replay-btn')) && /width:44px;height:44px/.test(rule('#dr-close')));
 ok('global.css cache-busted', /global\.css\?v=([3-9]|\d\d)/.test(html));
 ok('GOALS header badge is labelled active-only', /R\.n\.textContent = n \+ ' active'/.test(orch));
+const appjs = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
+ok('dashboard is read-only: no pause/resume/cancel/note controls', !/btn-pause|btn-resume|btn-cancel|note-form|id="note"|id="toolbar"|id="confirm"/.test(html) && !/\/api\/control|lockCtl|WHY_LIVE|btn-pause|\$\('note'\)/.test(appjs));
 console.log(fails ? fails + ' FAILED' : 'mobile: all ok'); process.exit(fails ? 1 : 0);

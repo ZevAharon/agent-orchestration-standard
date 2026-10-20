@@ -2,9 +2,15 @@
 
 [![CI](https://github.com/tomtomsatnav/agent-orchestration-standard/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtomsatnav/agent-orchestration-standard/actions/workflows/ci.yml)
 
-A live, read-only view of your Claude Code sessions: agents, tasks, tokens, cost, file conflicts and alerts, as a streaming graph in the browser, a terminal view (`aos-dash`), an MCP server and a status line. Local-only, zero dependencies.
+**A read-only live monitor for Claude Code.** It shows what your sessions and subagents are doing (agents, tasks, tokens, cost, file conflicts, alerts) as a streaming graph in the browser, a terminal view (`aos-dash`), an MCP server and a status line. It never starts, stops or steers agents. Local-only, zero dependencies.
 
-It also shows [AOS-1](https://github.com/tomtomsatnav/aos-1-spec) goals, a small open standard for observable agent orchestration (periodic heartbeat, plain-file state, append-only event log). The spec lives in [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec); the experimental orchestrator engine lives in [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator).
+Looking for orchestration (planning goals, launching and managing workers)? That is a different, separate and **experimental** project: [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator), opt-in. This dashboard can display its goals, nothing more.
+
+| Which piece do I want? | Repo | What it is |
+|---|---|---|
+| Watch my Claude Code agents live | this repo (dashboard) | Read-only monitor. Start here. |
+| A standard for observable agent state | [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec) | Open spec: heartbeat, plain-file state, event log. |
+| Have agents planned and run for me | [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) | Experimental engine that launches real `claude` workers. |
 
 <p align="center">
   <a href="docs/screenshots.md"><img src="docs/hero.gif" alt="AOS live dashboard: a project graph of agents with streaming activity" width="900"></a><br>
@@ -25,7 +31,7 @@ Then start a new Claude Code session and open http://127.0.0.1:4318. The graph's
 
 ## GOALS panel
 
-The GOALS panel shows orchestrator goals from disk, but approving, pausing and starting goals needs the control server from [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) (`aos-orch serve`, port 4319). Without it the panel is read-only. The files the dashboard reads are described in [docs/orch-state-contract.md](docs/orch-state-contract.md).
+The GOALS panel only displays goals from the separate, experimental orchestrator, read from disk, but approving, pausing and starting goals needs the control server from [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator) (`aos-orch serve`, port 4319). Without it the panel is read-only. The files the dashboard reads are described in [docs/orch-state-contract.md](docs/orch-state-contract.md).
 
 ## Docs
 
