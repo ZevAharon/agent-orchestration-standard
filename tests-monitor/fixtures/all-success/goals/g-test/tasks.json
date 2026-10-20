@@ -1,0 +1,275 @@
+[
+  {
+    "id": "t1",
+    "goal_id": "g-test",
+    "title": "Write a.txt",
+    "assignee": "worker-t1",
+    "status": "done",
+    "depends_on": [],
+    "attempts": 1,
+    "max_attempts": 3,
+    "output_contract": "a.txt contains alpha",
+    "acceptance": [
+      "a.txt contains alpha"
+    ],
+    "artifacts": [
+      {
+        "type": "commit",
+        "sha": "7c03575391ef61810475f2853990bcdc72584d9c",
+        "branch": "aos/g-test/t1"
+      }
+    ],
+    "created_at": "2026-10-20T16:02:23.024Z",
+    "updated_at": "2026-10-20T16:02:23.369Z",
+    "orch": {
+      "description": "Create a.txt",
+      "model_tier": "haiku",
+      "tier_ladder": [
+        "haiku",
+        "sonnet",
+        "opus"
+      ],
+      "path_scope": [
+        "a.txt"
+      ],
+      "read_scope": [
+        "**"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash"
+      ],
+      "allowed_commands": [
+        "cat a.txt"
+      ],
+      "checks": [
+        {
+          "argv": [
+            "grep",
+            "-qx",
+            "alpha",
+            "a.txt"
+          ],
+          "timeout_s": 30
+        }
+      ],
+      "branch": "aos/g-test/t1",
+      "worktree": null,
+      "phase": null,
+      "attempt_log": [
+        {
+          "n": 1,
+          "tier": "haiku",
+          "session_id": "50c2f6a0-4981-4d7d-a069-4e37a7a652e6",
+          "started_at": "2026-10-20T16:02:23.064Z",
+          "ended_at": "2026-10-20T16:02:23.236Z",
+          "outcome": "success",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": true
+        }
+      ],
+      "grants": [],
+      "result_summary": "Created a.txt.",
+      "tokens": {
+        "new": 4506,
+        "cache_read": 14000
+      },
+      "denial_retries": 0,
+      "note": null,
+      "worker_seq": 1
+    }
+  },
+  {
+    "id": "t2",
+    "goal_id": "g-test",
+    "title": "Write b.txt",
+    "assignee": "worker-t2",
+    "status": "done",
+    "depends_on": [],
+    "attempts": 1,
+    "max_attempts": 3,
+    "output_contract": "b.txt contains beta",
+    "acceptance": [
+      "b.txt contains beta"
+    ],
+    "artifacts": [
+      {
+        "type": "commit",
+        "sha": "b86ce4e2168bb0b61341c4536bf41436fbd525bf",
+        "branch": "aos/g-test/t2"
+      }
+    ],
+    "created_at": "2026-10-20T16:02:23.024Z",
+    "updated_at": "2026-10-20T16:02:23.586Z",
+    "orch": {
+      "description": "Create b.txt",
+      "model_tier": "haiku",
+      "tier_ladder": [
+        "haiku",
+        "sonnet",
+        "opus"
+      ],
+      "path_scope": [
+        "b.txt"
+      ],
+      "read_scope": [
+        "**"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash"
+      ],
+      "allowed_commands": [
+        "cat b.txt"
+      ],
+      "checks": [
+        {
+          "argv": [
+            "grep",
+            "-qx",
+            "beta",
+            "b.txt"
+          ],
+          "timeout_s": 30
+        }
+      ],
+      "branch": "aos/g-test/t2",
+      "worktree": null,
+      "phase": null,
+      "attempt_log": [
+        {
+          "n": 1,
+          "tier": "haiku",
+          "session_id": "6a06826a-f4db-433c-abf0-af89866046cc",
+          "started_at": "2026-10-20T16:02:23.097Z",
+          "ended_at": "2026-10-20T16:02:23.461Z",
+          "outcome": "success",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": true
+        }
+      ],
+      "grants": [],
+      "result_summary": "Created b.txt.",
+      "tokens": {
+        "new": 4506,
+        "cache_read": 14000
+      },
+      "denial_retries": 0,
+      "note": null,
+      "worker_seq": 1
+    }
+  },
+  {
+    "id": "t3",
+    "goal_id": "g-test",
+    "title": "Write c.txt",
+    "assignee": "worker-t3",
+    "status": "done",
+    "depends_on": [
+      "t1",
+      "t2"
+    ],
+    "attempts": 1,
+    "max_attempts": 3,
+    "output_contract": "c.txt contains gamma",
+    "acceptance": [
+      "c.txt contains gamma"
+    ],
+    "artifacts": [
+      {
+        "type": "commit",
+        "sha": "3fbf7e48447ce1a7d5bce092562f4536bbbffcb7",
+        "branch": "aos/g-test/t3"
+      }
+    ],
+    "created_at": "2026-10-20T16:02:23.024Z",
+    "updated_at": "2026-10-20T16:02:23.988Z",
+    "orch": {
+      "description": "Create c.txt",
+      "model_tier": "haiku",
+      "tier_ladder": [
+        "haiku",
+        "sonnet",
+        "opus"
+      ],
+      "path_scope": [
+        "c.txt"
+      ],
+      "read_scope": [
+        "**"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash"
+      ],
+      "allowed_commands": [
+        "cat c.txt"
+      ],
+      "checks": [
+        {
+          "argv": [
+            "grep",
+            "-qx",
+            "gamma",
+            "c.txt"
+          ],
+          "timeout_s": 30
+        }
+      ],
+      "branch": "aos/g-test/t3",
+      "worktree": null,
+      "phase": null,
+      "attempt_log": [
+        {
+          "n": 1,
+          "tier": "haiku",
+          "session_id": "88b35ecb-b51b-4781-8180-867c9ba2bcc3",
+          "started_at": "2026-10-20T16:02:23.708Z",
+          "ended_at": "2026-10-20T16:02:23.864Z",
+          "outcome": "success",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": true
+        }
+      ],
+      "grants": [],
+      "result_summary": "Created c.txt.",
+      "tokens": {
+        "new": 4506,
+        "cache_read": 14000
+      },
+      "denial_retries": 0,
+      "note": null,
+      "worker_seq": 1
+    }
+  }
+]

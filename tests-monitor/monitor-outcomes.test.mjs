@@ -1,4 +1,4 @@
-// Per-task / per-goal outcome summary in /api/goals(+/:id). Fixtures come from the REAL engine + fake claude (retry, escalation, failure).
+// Per-task / per-goal outcome summary in /api/goals(+/:id). Fixtures are golden goal dirs (generated once from the real engine; see fixtures/README.md).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,45 +8,30 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkSandbox, drive } from '../orchestrator/test/helpers.mjs';
-import { ptask, crit, edit } from '../orchestrator/test/helpers.mjs';
 
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const MONITOR = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'monitor.mjs');
 const TMP = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-monout-')));
 const freePort = () => new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 const get = (port, p) => new Promise((resolve, reject) => { http.get({ host: '127.0.0.1', port, path: p, agent: false }, (res) => { let b = ''; res.on('data', (d) => { b += d; }); res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(b), text: b })); }).on('error', reject); });
-const wrong = (n) => ({ behavior: 'fail_checks', edits: [{ path: 'a.txt', content: `wrong ${n}\n` }] });
-const onePlan = (...tasks) => ({ tasks, risks: [] });
+const put = (fx, id) => { const d = path.join(ORCH, 'goals', id); fs.cpSync(path.join(FIXTURES, fx, 'goals', id), d, { recursive: true }); return d; };
+const patch = (f, fn) => { const j = JSON.parse(fs.readFileSync(f, 'utf8')); fn(j); fs.writeFileSync(f, JSON.stringify(j)); };
 
-const sbs = []; let ORCH, M, port;
-async function run(id, scenarioTasks, plan, crits) {
-  const sb = mkSandbox('aos-monout'); sbs.push(sb);
-  sb.scenario({ tasks: scenarioTasks });
-  const { dir } = await sb.goal({ id, success_criteria: crits, plan });
-  await drive(sb.engine(dir));
-  fs.cpSync(dir, path.join(ORCH, 'goals', id), { recursive: true });
-}
+let ORCH, M, port;
 before(async () => {
   ORCH = path.join(TMP, 'orch'); fs.mkdirSync(path.join(ORCH, 'goals'), { recursive: true }); fs.mkdirSync(path.join(TMP, 'live'));
-  // retried-then-escalated: haiku fails checks, sonnet succeeds (cost_usd 0.05 on the winning attempt)
-  await run('g-esc', { t1: [wrong(1), edit('a.txt', 'alpha')] }, onePlan(ptask('t1', 'a.txt', 'alpha')), [crit('a.txt', 'alpha')]);
-  // t1 fails on every tier; t2 depends on it and is never run
-  await run('g-fail', { t1: [wrong(1), wrong(2), wrong(3)] }, onePlan(ptask('t1', 'a.txt', 'alpha'), ptask('t2', 'b.txt', 'beta', { deps: ['t1'] })), [crit('b.txt', 'beta')]);
-  // fabricated waiting state on a copy of g-fail: pending approval 10 min old for t2, plan awaiting since 20 min ago
-  const w = path.join(ORCH, 'goals', 'g-wait'); fs.cpSync(path.join(ORCH, 'goals', 'g-esc'), w, { recursive: true });
-  const g = JSON.parse(fs.readFileSync(path.join(w, 'goal.json'), 'utf8')); g.id = 'g-wait';
-  fs.writeFileSync(path.join(w, 'goal.json'), JSON.stringify(g));
-  fs.mkdirSync(path.join(w, 'approvals'), { recursive: true });
-  fs.writeFileSync(path.join(w, 'approvals', 'A-1.json'), JSON.stringify({ id: 'A-1', task_id: 't1', status: 'pending', requested_at: new Date(Date.now() - 600e3).toISOString() }));
-  const p = path.join(ORCH, 'goals', 'g-plan'); fs.cpSync(path.join(ORCH, 'goals', 'g-esc'), p, { recursive: true });
-  const gp = JSON.parse(fs.readFileSync(path.join(p, 'goal.json'), 'utf8')); gp.id = 'g-plan'; gp.status = 'draft'; gp.orch.plan_state = 'awaiting_approval'; gp.orch.plan_awaiting_since_ms = Date.now() - 1200e3;
-  fs.writeFileSync(path.join(p, 'goal.json'), JSON.stringify(gp));
+  put('escalation', 'g-esc');   // haiku fails checks, sonnet succeeds
+  put('failed', 'g-fail');      // t1 fails on every tier; t2 depends on it and is never run
+  // fabricated waiting states (timestamps relative to now): pending approval 10 min old for t1, plan awaiting since 20 min ago
+  const w = put('waiting', 'g-wait');
+  patch(path.join(w, 'approvals', 'A-1.json'), (a) => { a.requested_at = new Date(Date.now() - 600e3).toISOString(); });
+  patch(path.join(put('plan', 'g-plan'), 'goal.json'), (g) => { g.orch.plan_awaiting_since_ms = Date.now() - 1200e3; });
   port = await freePort();
   const pr = spawn(process.execPath, [MONITOR], { env: { ...process.env, PORT: String(port), AOS_LIVE_DIR: path.join(TMP, 'live'), AOS_ORCH_DIR: ORCH }, stdio: ['ignore', 'pipe', 'pipe'] });
   M = pr;
   await new Promise((res, rej) => { pr.stdout.on('data', (d) => { if (String(d).includes('live monitor on')) res(); }); pr.on('exit', () => rej(new Error('monitor exited'))); setTimeout(() => rej(new Error('timeout')), 8000); });
 });
-after(() => { try { M.kill('SIGKILL'); } catch {} for (const s of sbs) s.cleanup(); fs.rmSync(TMP, { recursive: true, force: true }); });
+after(() => { try { M.kill('SIGKILL'); } catch {} fs.rmSync(TMP, { recursive: true, force: true }); });
 const detail = async (id) => (await get(port, '/api/goals/' + id)).json.goal;
 
 test('escalated task: outcome, tier path, tokens, cost; goal roll-up', async () => {
@@ -81,5 +66,5 @@ test('list carries the roll-up, keeps the {goals} / {goal} wrappers and leaks no
   assert.equal(byId['g-esc'].outcome.merged, 1); assert.equal(byId['g-fail'].outcome.discarded, 1);
   assert.deepEqual(Object.keys(byId['g-esc'].outcome).sort(), ['cost_usd', 'discarded', 'merged', 'tokens_per_accepted', 'waiting_on', 'waiting_s']);
   assert.deepEqual(Object.keys((await get(port, '/api/goals/g-esc')).json), ['goal']);
-  for (const x of [r.text, JSON.stringify(await detail('g-fail'))]) assert.ok(!x.includes('/Users/') && !x.includes(TMP) && !x.includes(os.tmpdir()));
+  for (const x of [r.text, JSON.stringify(await detail('g-fail'))]) assert.ok(!x.includes('/Users/') && !x.includes('/fixture') && !x.includes(TMP) && !x.includes(os.tmpdir()));
 });

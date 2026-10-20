@@ -1,0 +1,101 @@
+{
+  "id": "g-test",
+  "title": "Test goal",
+  "description": "",
+  "status": "achieved",
+  "success_criteria": [
+    {
+      "id": "c1",
+      "text": "a, b and c present",
+      "met": true,
+      "check": {
+        "argv": [
+          "node",
+          "-e",
+          "const f=require('fs');for(const [n,w] of [['a.txt','alpha'],['b.txt','beta'],['c.txt','gamma']])if(f.readFileSync(n,'utf8').trim()!==w)process.exit(1)"
+        ],
+        "timeout_s": 30
+      }
+    }
+  ],
+  "budget": {
+    "max_ticks": 100000,
+    "max_usd": 50,
+    "max_wall_clock_s": 3600,
+    "spent_usd": 0.045228
+  },
+  "created_at": "2026-10-20T16:02:22.831Z",
+  "updated_at": "2026-10-20T16:02:24.073Z",
+  "orch": {
+    "repo": "/fixture/repo",
+    "base_branch": "main",
+    "base_commit": "93a7ea79108478fcd70bbb477989e71c38077f7a",
+    "integration_branch": "aos/g-test/integration",
+    "worktree_root": "/fixture/repo-aos-worktrees/g-test",
+    "budgets": {
+      "max_new_tokens": 2000000,
+      "max_parallel": 3,
+      "max_attempts": 3,
+      "max_tasks": 12,
+      "task_wall_clock_s": 60,
+      "approval_ttl_s": 86400,
+      "stall_after_s": 60,
+      "max_turns": 30,
+      "attempt_usd_cap": 2
+    },
+    "approval_policy": {
+      "plan": "auto",
+      "outside_allowlist": "ask",
+      "dangerous": "deny"
+    },
+    "trust_repo_config": false,
+    "unsandboxed_checks": false,
+    "check_localhost_ports": [],
+    "policy": "policy.default.json",
+    "check_allowlist": [
+      "grep",
+      "node",
+      "test"
+    ],
+    "governor": {},
+    "usage": {
+      "new_tokens": 21328,
+      "cache_read_tokens": 62000,
+      "notional_usd": 0.045228,
+      "workers_started": 4
+    },
+    "plan_state": "approved",
+    "plan_session_id": "a857b950-5fad-4a1f-be1b-9d5eff6fee98",
+    "paused_reason": null,
+    "halt_reason": null,
+    "started_ms": 1792512143028,
+    "reported": true,
+    "created_branches": [
+      "aos/g-test/integration",
+      "aos/g-test/t1",
+      "aos/g-test/t2",
+      "aos/g-test/t3"
+    ],
+    "repo_config_findings": [],
+    "instructions": {
+      "CLAUDE.md": null,
+      ".claude/CLAUDE.md": null,
+      "CLAUDE.local.md": null
+    },
+    "resume_at": null,
+    "approvals_seen": {},
+    "plan_fingerprint": {
+      "plan_hash": "3a20df33e9b1c536b55c0802c0cdcced561d22c58d5731276a5a1de9313c26a5",
+      "tasks_hash": "e830c9301a6ec468f11fac171ba6ce0fc531749eac72316e0a127a35a8489f73"
+    },
+    "plan_awaiting_since_ms": 1792512143025,
+    "plan_approval": {
+      "by": "human",
+      "at": "2026-10-20T16:02:23.028Z",
+      "plan_hash": "3a20df33e9b1c536b55c0802c0cdcced561d22c58d5731276a5a1de9313c26a5",
+      "tasks_hash": "e830c9301a6ec468f11fac171ba6ce0fc531749eac72316e0a127a35a8489f73",
+      "has_commands": true
+    },
+    "soft": []
+  }
+}

@@ -1,0 +1,44 @@
+{"ts":"2026-10-20T16:02:22.881Z","seq":1,"type":"goal.created","actor":"human","goal_id":"g-test","task_id":null,"data":{"title":"Test goal","criteria":1}}
+{"ts":"2026-10-20T16:02:22.960Z","seq":2,"type":"orch.worker.started","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"role":"planner","pid":1996,"tier":"opus","session_id":"a857b950-5fad-4a1f-be1b-9d5eff6fee98"}}
+{"ts":"2026-10-20T16:02:23.022Z","seq":3,"type":"orch.worker.exited","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"role":"planner","exit_code":0,"new_tokens":7810}}
+{"ts":"2026-10-20T16:02:23.024Z","seq":4,"type":"task.created","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{"depends_on":[],"tier":"haiku"}}
+{"ts":"2026-10-20T16:02:23.024Z","seq":5,"type":"task.created","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{"depends_on":[],"tier":"haiku"}}
+{"ts":"2026-10-20T16:02:23.024Z","seq":6,"type":"task.created","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{"depends_on":["t1","t2"],"tier":"haiku"}}
+{"ts":"2026-10-20T16:02:23.025Z","seq":7,"type":"orch.plan.created","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"tasks":3,"source":"planner","risks":[]}}
+{"ts":"2026-10-20T16:02:23.025Z","seq":8,"type":"orch.plan.approval_required","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"reason":"plan contains commands that need human review (t1 allowed_commands: cat a.txt; t2 allowed_commands: cat b.txt; t3 allowed_commands: cat c.txt)","note":"plan_approval \"auto\" does not apply to plans with commands"}}
+{"ts":"2026-10-20T16:02:23.025Z","seq":9,"type":"goal.updated","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"status":"draft","plan_state":"awaiting_approval"}}
+{"ts":"2026-10-20T16:02:23.027Z","seq":10,"type":"heartbeat.tick","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"seq":1,"ok":true,"ms":144,"goal_status":"draft","tasks":{"pending":3},"running":0,"new_tokens":7810,"governor":null,"paused":false}}
+{"ts":"2026-10-20T16:02:23.028Z","seq":11,"type":"orch.plan.approved","actor":"human","goal_id":"g-test","task_id":null,"data":{"by":"human","plan_hash":"3a20df33e9b1"}}
+{"ts":"2026-10-20T16:02:23.028Z","seq":12,"type":"human.approve","actor":"human","goal_id":"g-test","task_id":null,"data":{"what":"plan"}}
+{"ts":"2026-10-20T16:02:23.028Z","seq":13,"type":"goal.updated","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"status":"active"}}
+{"ts":"2026-10-20T16:02:23.029Z","seq":14,"type":"task.ready","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{}}
+{"ts":"2026-10-20T16:02:23.029Z","seq":15,"type":"task.ready","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{}}
+{"ts":"2026-10-20T16:02:23.064Z","seq":16,"type":"task.started","actor":"worker-t1","goal_id":"g-test","task_id":"t1","data":{"attempt":1,"tier":"haiku","seq":1}}
+{"ts":"2026-10-20T16:02:23.096Z","seq":17,"type":"agent.spawned","actor":"worker-t1","goal_id":"g-test","task_id":"t1","data":{"pid":2031,"tier":"haiku","session_id":"50c2f6a0-4981-4d7d-a069-4e37a7a652e6"}}
+{"ts":"2026-10-20T16:02:23.096Z","seq":18,"type":"orch.worker.started","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{"pid":2031,"tier":"haiku","attempt":1,"seq":1}}
+{"ts":"2026-10-20T16:02:23.097Z","seq":19,"type":"task.started","actor":"worker-t2","goal_id":"g-test","task_id":"t2","data":{"attempt":1,"tier":"haiku","seq":1}}
+{"ts":"2026-10-20T16:02:23.146Z","seq":20,"type":"agent.spawned","actor":"worker-t2","goal_id":"g-test","task_id":"t2","data":{"pid":2046,"tier":"haiku","session_id":"6a06826a-f4db-433c-abf0-af89866046cc"}}
+{"ts":"2026-10-20T16:02:23.146Z","seq":21,"type":"orch.worker.started","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{"pid":2046,"tier":"haiku","attempt":1,"seq":1}}
+{"ts":"2026-10-20T16:02:23.148Z","seq":22,"type":"heartbeat.tick","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"seq":2,"ok":true,"ms":121,"goal_status":"active","tasks":{"running":2,"pending":1},"running":2,"new_tokens":7810,"governor":null,"paused":false}}
+{"ts":"2026-10-20T16:02:23.214Z","seq":23,"type":"heartbeat.tick","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"seq":3,"ok":true,"ms":3,"goal_status":"active","tasks":{"running":2,"pending":1},"running":2,"new_tokens":7810,"governor":null,"paused":false}}
+{"ts":"2026-10-20T16:02:23.236Z","seq":24,"type":"orch.worker.exited","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{"exit_code":0,"signal":null,"subtype":"success","new_tokens":4506,"kill_reason":null,"denials":0}}
+{"ts":"2026-10-20T16:02:23.310Z","seq":25,"type":"orch.check.passed","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{"attempt":1,"checks":[{"argv":"grep -qx alpha a.txt","ok":true,"exit_code":0,"timed_out":false,"sandboxed":true}]}}
+{"ts":"2026-10-20T16:02:23.394Z","seq":26,"type":"orch.integrate.merged","actor":"orchestrator","goal_id":"g-test","task_id":"t1","data":{"sha":"7c03575391ef61810475f2853990bcdc72584d9c","branch":"aos/g-test/t1"}}
+{"ts":"2026-10-20T16:02:23.394Z","seq":27,"type":"task.completed","actor":"worker-t1","goal_id":"g-test","task_id":"t1","data":{"result":"Created a.txt.","tier":"haiku","attempts":1}}
+{"ts":"2026-10-20T16:02:23.461Z","seq":28,"type":"orch.worker.exited","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{"exit_code":0,"signal":null,"subtype":"success","new_tokens":4506,"kill_reason":null,"denials":0}}
+{"ts":"2026-10-20T16:02:23.532Z","seq":29,"type":"orch.check.passed","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{"attempt":1,"checks":[{"argv":"grep -qx beta b.txt","ok":true,"exit_code":0,"timed_out":false,"sandboxed":true}]}}
+{"ts":"2026-10-20T16:02:23.611Z","seq":30,"type":"orch.integrate.merged","actor":"orchestrator","goal_id":"g-test","task_id":"t2","data":{"sha":"b86ce4e2168bb0b61341c4536bf41436fbd525bf","branch":"aos/g-test/t2"}}
+{"ts":"2026-10-20T16:02:23.611Z","seq":31,"type":"task.completed","actor":"worker-t2","goal_id":"g-test","task_id":"t2","data":{"result":"Created b.txt.","tier":"haiku","attempts":1}}
+{"ts":"2026-10-20T16:02:23.682Z","seq":32,"type":"task.ready","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{}}
+{"ts":"2026-10-20T16:02:23.708Z","seq":33,"type":"task.started","actor":"worker-t3","goal_id":"g-test","task_id":"t3","data":{"attempt":1,"tier":"haiku","seq":1}}
+{"ts":"2026-10-20T16:02:23.740Z","seq":34,"type":"agent.spawned","actor":"worker-t3","goal_id":"g-test","task_id":"t3","data":{"pid":2275,"tier":"haiku","session_id":"88b35ecb-b51b-4781-8180-867c9ba2bcc3"}}
+{"ts":"2026-10-20T16:02:23.740Z","seq":35,"type":"orch.worker.started","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{"pid":2275,"tier":"haiku","attempt":1,"seq":1}}
+{"ts":"2026-10-20T16:02:23.741Z","seq":36,"type":"heartbeat.tick","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"seq":4,"ok":true,"ms":506,"goal_status":"active","tasks":{"done":2,"running":1},"running":1,"new_tokens":16822,"governor":null,"paused":false}}
+{"ts":"2026-10-20T16:02:23.804Z","seq":37,"type":"heartbeat.tick","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"seq":5,"ok":true,"ms":2,"goal_status":"active","tasks":{"done":2,"running":1},"running":1,"new_tokens":16822,"governor":null,"paused":false}}
+{"ts":"2026-10-20T16:02:23.864Z","seq":38,"type":"orch.worker.exited","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{"exit_code":0,"signal":null,"subtype":"success","new_tokens":4506,"kill_reason":null,"denials":0}}
+{"ts":"2026-10-20T16:02:23.934Z","seq":39,"type":"orch.check.passed","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{"attempt":1,"checks":[{"argv":"grep -qx gamma c.txt","ok":true,"exit_code":0,"timed_out":false,"sandboxed":true}]}}
+{"ts":"2026-10-20T16:02:24.011Z","seq":40,"type":"orch.integrate.merged","actor":"orchestrator","goal_id":"g-test","task_id":"t3","data":{"sha":"3fbf7e48447ce1a7d5bce092562f4536bbbffcb7","branch":"aos/g-test/t3"}}
+{"ts":"2026-10-20T16:02:24.011Z","seq":41,"type":"task.completed","actor":"worker-t3","goal_id":"g-test","task_id":"t3","data":{"result":"Created c.txt.","tier":"haiku","attempts":1}}
+{"ts":"2026-10-20T16:02:24.072Z","seq":42,"type":"goal.updated","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"criterion":"c1","met":true}}
+{"ts":"2026-10-20T16:02:24.073Z","seq":43,"type":"goal.achieved","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"criteria":1}}
+{"ts":"2026-10-20T16:02:24.092Z","seq":44,"type":"orch.report.written","actor":"orchestrator","goal_id":"g-test","task_id":null,"data":{"path":"/fixture/orch/goals/g-test/report.md","status":"achieved"}}

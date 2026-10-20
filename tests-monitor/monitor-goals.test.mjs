@@ -1,4 +1,4 @@
-// Monitor goal view + hook tagging tests. Goal fixtures are produced by the REAL orchestrator engine running against the fake claude.
+// Monitor goal view + hook tagging tests. Goal fixtures are golden goal dirs under fixtures/ (generated once from the real engine; see fixtures/README.md).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,8 +8,8 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkSandbox, drive, HERE as OHERE } from '../orchestrator/test/helpers.mjs';
 
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MONITOR = path.join(ROOT, 'monitor.mjs'), HOOK = path.join(ROOT, 'hooks', 'aos-hook.mjs');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,33 +32,26 @@ async function startMonitor({ orch, live }) {
 }
 const hookEv = (o) => JSON.stringify({ ts: new Date().toISOString(), ...o }) + '\n';
 
-let sb, goalSrc, ORCH, LIVE, M, WT;
+let ORCH, LIVE, M, WT;
 before(async () => {
-  sb = mkSandbox('aos-mon-fixture');
-  const SC = JSON.parse(fs.readFileSync(path.join(OHERE, 'scenarios', 'all-success-3-tasks.json'), 'utf8'));
-  sb.scenario(SC);
-  const ALL3 = { id: 'c1', text: 'a, b and c present', check: { argv: ['node', '-e', "const f=require('fs');for(const [n,w] of [['a.txt','alpha'],['b.txt','beta'],['c.txt','gamma']])if(f.readFileSync(n,'utf8').trim()!==w)process.exit(1)"], timeout_s: 30 } };
-  const { dir } = await sb.goal({ success_criteria: [ALL3] });
-  const eng = sb.engine(dir); await eng.start(); await drive(eng);
-  goalSrc = dir;
   ORCH = path.join(TMP, 'orch'); LIVE = path.join(TMP, 'live');
   fs.mkdirSync(path.join(ORCH, 'goals'), { recursive: true }); fs.mkdirSync(LIVE, { recursive: true });
-  fs.cpSync(goalSrc, path.join(ORCH, 'goals', 'g-test'), { recursive: true });
+  fs.cpSync(path.join(FIXTURES, 'all-success', 'goals', 'g-test'), path.join(ORCH, 'goals', 'g-test'), { recursive: true });
   // a pending approval for t2 (the shape the policy hook writes)
   const ad = path.join(ORCH, 'goals', 'g-test', 'approvals'); fs.mkdirSync(ad, { recursive: true });
   fs.writeFileSync(path.join(ad, 'A-1.json'), JSON.stringify({ id: 'A-1', goal_id: 'g-test', task_id: 't2', status: 'pending', tool: 'Bash', input: { command: 'rm -rf /Users/secret/x' } }));
-  WT = path.join(sb.root, 'repo.aos-worktrees', 'g-test', 't1');
+  WT = '/fixture/repo.aos-worktrees/g-test/t1';
   M = await startMonitor({ orch: ORCH, live: LIVE });
 });
-after(async () => { try { await M.stop(); } catch {} sb.cleanup(); fs.rmSync(TMP, { recursive: true, force: true }); });
+after(async () => { try { await M.stop(); } catch {} fs.rmSync(TMP, { recursive: true, force: true }); });
 
 const readAll = (j) => JSON.stringify(j);
 function noPaths(txt, what) {
   assert.ok(!txt.includes('/Users/'), `${what}: contains /Users/`);
-  assert.ok(!txt.includes(TMP) && !txt.includes(sb.root) && !txt.includes(os.tmpdir()), `${what}: contains temp dir`);
+  assert.ok(!txt.includes(TMP) && !txt.includes('/fixture') && !txt.includes(os.tmpdir()), `${what}: contains temp dir`);
 }
 
-test('GET /api/goals: summary fields mapped from the real engine files', async () => {
+test('GET /api/goals: summary fields mapped from the golden engine files', async () => {
   const r = await M.get('/api/goals');
   assert.equal(r.status, 200);
   assert.equal(r.json.goals.length, 1);
@@ -151,7 +144,7 @@ test('partial / corrupt files: skipped or tolerated, never a crash', async () =>
   await sleep(1150);
 });
 
-test('missing orchestrator dir = empty list', async () => {
+test('missing orch dir = empty list', async () => {
   const live = path.join(TMP, 'live-empty'); fs.mkdirSync(live);
   const m = await startMonitor({ orch: path.join(TMP, 'does-not-exist'), live });
   try {

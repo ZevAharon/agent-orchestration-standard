@@ -1,0 +1,186 @@
+[
+  {
+    "id": "t1",
+    "goal_id": "g-fail",
+    "title": "Write a.txt",
+    "assignee": "worker-t1",
+    "status": "failed",
+    "depends_on": [],
+    "attempts": 3,
+    "max_attempts": 3,
+    "output_contract": "a.txt holds alpha",
+    "acceptance": [
+      "a.txt holds alpha"
+    ],
+    "artifacts": [],
+    "created_at": "2026-10-20T16:02:25.124Z",
+    "updated_at": "2026-10-20T16:02:25.987Z",
+    "orch": {
+      "description": "Create a.txt",
+      "model_tier": "opus",
+      "tier_ladder": [
+        "haiku",
+        "sonnet",
+        "opus"
+      ],
+      "path_scope": [
+        "a.txt"
+      ],
+      "read_scope": [
+        "**"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash"
+      ],
+      "allowed_commands": [],
+      "checks": [
+        {
+          "argv": [
+            "node",
+            "-e",
+            "const s=require('fs').readFileSync(\"a.txt\",'utf8').trim();if(s!==\"alpha\"){console.error('CHECKFAIL '+\"a.txt\"+' has '+JSON.stringify(s));process.exit(1)}"
+          ],
+          "timeout_s": 30
+        }
+      ],
+      "branch": "aos/g-fail/t1",
+      "worktree": null,
+      "phase": null,
+      "attempt_log": [
+        {
+          "n": 1,
+          "tier": "haiku",
+          "session_id": "c0c72cbd-ce7a-4b81-b98b-0c75249e028b",
+          "started_at": "2026-10-20T16:02:25.196Z",
+          "ended_at": "2026-10-20T16:02:25.347Z",
+          "outcome": "check_failed",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": false
+        },
+        {
+          "n": 2,
+          "tier": "sonnet",
+          "session_id": "175c9b1a-3aff-496b-9297-e2d059ed13af",
+          "started_at": "2026-10-20T16:02:25.491Z",
+          "ended_at": "2026-10-20T16:02:25.616Z",
+          "outcome": "check_failed",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": false
+        },
+        {
+          "n": 3,
+          "tier": "opus",
+          "session_id": "6f907681-d077-4671-b06c-efc863dba20c",
+          "started_at": "2026-10-20T16:02:25.756Z",
+          "ended_at": "2026-10-20T16:02:25.876Z",
+          "outcome": "check_failed",
+          "denials": 0,
+          "new_tokens": 4506,
+          "exit_code": 0,
+          "counted": true,
+          "accounted": true,
+          "notional_usd": 0.008906,
+          "collected": true,
+          "checks_ok": false
+        }
+      ],
+      "grants": [],
+      "result_summary": null,
+      "tokens": {
+        "new": 13518,
+        "cache_read": 42000
+      },
+      "denial_retries": 0,
+      "note": null,
+      "worker_seq": 3,
+      "last_failure": {
+        "kind": "check_failed",
+        "note": null,
+        "check_output": "CHECKFAIL a.txt has \"wrong 3\"\n",
+        "denials": []
+      }
+    }
+  },
+  {
+    "id": "t2",
+    "goal_id": "g-fail",
+    "title": "Write b.txt",
+    "assignee": "worker-t2",
+    "status": "pending",
+    "depends_on": [
+      "t1"
+    ],
+    "attempts": 0,
+    "max_attempts": 3,
+    "output_contract": "b.txt holds beta",
+    "acceptance": [
+      "b.txt holds beta"
+    ],
+    "artifacts": [],
+    "created_at": "2026-10-20T16:02:25.124Z",
+    "updated_at": "2026-10-20T16:02:25.124Z",
+    "orch": {
+      "description": "Create b.txt",
+      "model_tier": "haiku",
+      "tier_ladder": [
+        "haiku",
+        "sonnet",
+        "opus"
+      ],
+      "path_scope": [
+        "b.txt"
+      ],
+      "read_scope": [
+        "**"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash"
+      ],
+      "allowed_commands": [],
+      "checks": [
+        {
+          "argv": [
+            "node",
+            "-e",
+            "const s=require('fs').readFileSync(\"b.txt\",'utf8').trim();if(s!==\"beta\"){console.error('CHECKFAIL '+\"b.txt\"+' has '+JSON.stringify(s));process.exit(1)}"
+          ],
+          "timeout_s": 30
+        }
+      ],
+      "branch": "aos/g-fail/t2",
+      "worktree": null,
+      "phase": null,
+      "attempt_log": [],
+      "grants": [],
+      "result_summary": null,
+      "tokens": {
+        "new": 0,
+        "cache_read": 0
+      },
+      "denial_retries": 0,
+      "note": null
+    }
+  }
+]
