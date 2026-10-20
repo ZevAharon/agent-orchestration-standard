@@ -215,7 +215,7 @@
   function buildHeaderBtn() {
     var top = document.querySelector('header.top'), theme = $('theme-btn');
     if (!top) return;
-    var b = el('button', 'orch-hbtn'); b.type = 'button'; b.id = 'orch-btn';
+    var b = el('button', 'orch-hbtn'); b.type = 'button'; b.id = 'orch-btn'; b.hidden = true;
     b.setAttribute('aria-expanded', 'false'); b.setAttribute('aria-controls', 'orch-panel'); b.setAttribute('aria-haspopup', 'dialog');
     b.appendChild(document.createTextNode('Goals'));
     R.n = el('b', 'orch-n tnum', '0'); b.appendChild(R.n);
@@ -243,8 +243,20 @@
       pop.appendChild(b);
     });
   }
+  /* the orchestrator UI (GOALS button, Needs you badge) only shows for users who have it: at least one goal, or the control server answers /api/health */
+  var ctlUp = false, presTimer = null;
+  function orchOn() { return goalList().length > 0 || ctlUp; }
+  function checkPresence() {
+    var ac = window.AbortController ? new AbortController() : null, to = ac ? setTimeout(function () { ac.abort(); }, 3000) : null;
+    fetch(CTRL + '/api/health', { cache: 'no-store', credentials: 'omit', mode: 'cors', signal: ac ? ac.signal : undefined })
+      .then(function () { return true; }, function () { return false; })
+      .then(function (up) { if (to) clearTimeout(to); if (up !== ctlUp) { ctlUp = up; updateHeader(); } });
+  }
+  function startPresence() { checkPresence(); if (!presTimer) presTimer = setInterval(checkPresence, 30000); }
   function updateHeader() {
     if (!R.hbtn) return;
+    var on = orchOn(); R.hbtn.hidden = !on;
+    if (!on) { if (panelOpen) closePanel(); if (R.needs) { R.needs.hidden = true; setNeedsOpen(false); } return; }
     var n = activeCount(), p = pendingCount();
     R.n.textContent = n + ' active'; R.dot.hidden = p <= 0;
     R.hbtn.setAttribute('aria-label', 'Goals: ' + n + ' active' + (p > 0 ? ', ' + p + ' approval' + (p === 1 ? '' : 's') + ' pending' : '') + (panelOpen ? '. Close goals panel' : '. Open goals panel'));
@@ -1082,7 +1094,7 @@
   }
   function init() {
     safe(function () {
-      buildHeaderBtn(); watchDrawer();
+      buildHeaderBtn(); watchDrawer(); startPresence();
       if (bind()) return;
       var n = 0, iv = setInterval(function () { if (bind() || ++n > 60) clearInterval(iv); }, 500);
     });
