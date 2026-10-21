@@ -21,6 +21,10 @@ mtime+size, rescanned at most once a second. A partial/corrupt write keeps the l
 
 Free text is scrubbed (absolute paths and token-like strings removed) and length-capped before leaving the process.
 
+## Guard verdicts (`<root>/verdicts/<id>.json`)
+
+Written by `aos-orch verify`. `id` matches `^v-\d{8}-\d{6}-[0-9a-f]{6}$` and equals the file name. Fields read: `schema` (must be `aos.verdict/1`), `id`, `created_at`, `repo` (absolute; basename only exposed; also the per-repo key), `repo_name` (fallback), `base` (sha, shortened to 12), `base_ref` (null when the base was given as a sha), `tree` (`working` or a sha), `accepted`, `integrity` (both booleans, else the record is skipped), `rejections[{kind, detail}]`, `warnings[]`, `failing_tests[]`, `checks[{argv, ok, exit_code, duration_ms}]`, `duration_ms`, `source` (`cli|hook|eval`), `session_id` (matched only, never exposed), `tool_version`. Verdict = `verified` if accepted, else `integrity` if `integrity` is true, else `capability`. Mapping and limits: [dashboard.md, Guard view](dashboard.md#guard-view).
+
 ## Worker env tags (set by the engine, read by `hooks/aos-hook.mjs`)
 
 `AOS_GOAL_ID`, `AOS_TASK_ID`, `AOS_ATTEMPT`, `AOS_WORKTREE` are set in each worker's environment. The hook records only

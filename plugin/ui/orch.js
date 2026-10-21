@@ -235,11 +235,11 @@
   }
   function setNeedsOpen(on) { if (!R.needsPop) return; R.needsPop.hidden = !on; R.needs.setAttribute('aria-expanded', String(!!on)); if (on) renderNeeds(); }
   function renderNeeds() {
-    var nd = window.AOSNeeds.compute(goalList()), pop = R.needsPop; clear(pop);
+    var nd = window.AOSNeeds.compute(orchOn() ? goalList() : [], verdictSum), pop = R.needsPop; clear(pop);
     nd.items.forEach(function (it) {
       var b = el('button', 'orch-needs-it'); b.type = 'button'; b.setAttribute('data-id', it.id); b.setAttribute('data-kind', it.kind);
       b.appendChild(el('span', 'orch-needs-t', clip(it.title, 80))); b.appendChild(el('span', 'orch-needs-w', it.text));
-      b.addEventListener('click', function () { setNeedsOpen(false); if (!panelOpen) openPanel(); goDetail(it.id); });
+      b.addEventListener('click', function () { setNeedsOpen(false); if (it.kind === 'integrity') { if (window.AOSGuard && window.AOSGuard.open) window.AOSGuard.open(it.id); return; } if (!panelOpen) openPanel(); goDetail(it.id); });
       pop.appendChild(b);
     });
   }
@@ -256,12 +256,14 @@
   function updateHeader() {
     if (!R.hbtn) return;
     var on = orchOn(); R.hbtn.hidden = !on;
-    if (!on) { if (panelOpen) closePanel(); if (R.needs) { R.needs.hidden = true; setNeedsOpen(false); } return; }
+    /* Needs you also carries guard integrity rejections, so it can show without any goal */
+    var nd = window.AOSNeeds ? window.AOSNeeds.compute(on ? goalList() : [], verdictSum) : { total: 0 };
+    if (!on) { if (panelOpen) closePanel(); }
+    if (R.needs) { R.needs.hidden = nd.total <= 0; R.needsN.textContent = String(nd.total); R.needs.setAttribute('aria-label', 'Needs you: ' + nd.total + (nd.total === 1 ? ' item' : ' items') + ' waiting on you'); if (nd.total <= 0) setNeedsOpen(false); else if (!R.needsPop.hidden) renderNeeds(); }
+    if (!on) return;
     var n = activeCount(), p = pendingCount();
     R.n.textContent = n + ' active'; R.dot.hidden = p <= 0;
     R.hbtn.setAttribute('aria-label', 'Goals: ' + n + ' active' + (p > 0 ? ', ' + p + ' approval' + (p === 1 ? '' : 's') + ' pending' : '') + (panelOpen ? '. Close goals panel' : '. Open goals panel'));
-    var nd = window.AOSNeeds ? window.AOSNeeds.compute(goalList()) : { total: 0 };
-    if (R.needs) { R.needs.hidden = nd.total <= 0; R.needsN.textContent = String(nd.total); R.needs.setAttribute('aria-label', 'Needs you: ' + nd.total + (nd.total === 1 ? ' item' : ' items') + ' waiting on you'); if (nd.total <= 0) setNeedsOpen(false); else if (!R.needsPop.hidden) renderNeeds(); }
     R.hbtn.classList.toggle('on', panelOpen); R.hbtn.setAttribute('aria-expanded', String(panelOpen));
   }
 
@@ -325,6 +327,7 @@
 
   function openPanel() {
     if (panelOpen) return;
+    safe(function () { if (window.AOSGuard && window.AOSGuard.close) window.AOSGuard.close(); }); /* one side panel at a time */
     if (!R.panel) buildPanel();
     panelOpen = true; lastFocus = document.activeElement;
     if (token && ctl.st !== 'ok') ctl.st = 'connecting';
@@ -1081,7 +1084,7 @@
   }
 
   /* ---------------- state wiring ---------------- */
-  var lastGoalsSig = '';
+  var lastGoalsSig = '', verdictSum = null;
   function onState(st) {
     safe(function () {
       if (!st) return;
@@ -1090,7 +1093,8 @@
       if (Array.isArray(st.goals)) { goals = st.goals; goalsSeen = true; if (!isReplay) lastLiveGoals = st.goals; }
       else if (isReplay && lastLiveGoals) { goals = lastLiveGoals; }
       else if (!isReplay && st.goals === undefined && !goalsSeen) { goals = []; goalsSeen = true; }
-      var sig = JSON.stringify(goals); if (sig === lastGoalsSig) return; lastGoalsSig = sig;
+      if (!isReplay) verdictSum = st.verdicts && typeof st.verdicts === 'object' ? st.verdicts : null; /* replay omits verdicts: keep the live ones */
+      var sig = JSON.stringify(goals) + JSON.stringify(verdictSum); if (sig === lastGoalsSig) return; lastGoalsSig = sig;
       updateHeader();
       if (panelOpen) { if (view === 'list') renderListView(); else if (view === 'detail') { renderApprovals(); renderDetail(); } }
     });

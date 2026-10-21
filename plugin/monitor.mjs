@@ -543,6 +543,89 @@ const tierCheck = (gid, tid, served) => {
 const scopeCheck = (gid, tid) => { const e = gid && tid ? goalsIndex().byId.get(gid) : null, t = e && e.tasks.find((x) => x && x.id === tid); return t && scopeViolations(t) > 0 ? { out_of_scope: true } : {}; };
 const withWorkers = (list, agents) => { const n = new Map(); for (const a of agents) if (a.goal_id && a.status === 'running') n.set(a.goal_id, (n.get(a.goal_id) || 0) + 1); return list.map((g) => ({ ...g, workers: n.get(g.id) || 0 })); };
 
+// ---------- guard verdicts (READ-ONLY view of `aos-orch verify` records: <orch root>/verdicts/<id>.json, schema aos.verdict/1) ----------
+// Same roots as goals. Only file names matching VID_RE are read; the id encodes its time, so the newest VERDICT_SCAN_MAX names are
+// taken by name (no stat of older files), each <= 64 KB, cached by mtime+size, rescanned at most once a second. Bad JSON, wrong
+// schema, an id that differs from the file name or a non-boolean accepted/integrity -> skipped. Exposed (all scrubbed like goals):
+// repo -> repo_name (basename only), base -> 12-char sha, tree 'working' or a 12-char sha, rejections[{kind, detail}], warnings,
+// failing_tests, checks[{cmd (argv joined, paths reduced to basenames), ok, exit_code, duration_ms}]. session_id is NEVER exposed: it is
+// only matched (first 8 chars, as the hook log keeps them) against live sessions, which then carry `guard` and the verdict `agent`.
+const VERDICT_DIRS = ORCH_ROOTS.map((r) => path.join(r, 'verdicts'));
+const VID_RE = /^v-\d{8}-\d{6}-[0-9a-f]{6}$/, VERDICT_SCAN_MAX = 200, VERDICT_FILE_MAX = 64 * 1024, VERDICTS_API_MAX = 50, VERDICT_LATEST_MAX = 20;
+const VSOURCES = new Set(['cli', 'hook', 'eval']), VKIND_RE = /^[a-z0-9_.-]{1,40}$/, SHA_RE = /^[0-9a-f]{7,64}$/;
+const verdictEntries = new Map(); // file -> { sig, v (internal record) | null }
+let verdictsView = { list: [], sig: '' }, verdictsScanAt = 0;
+const strList = (x, n, len) => (Array.isArray(x) ? x : []).filter((s) => typeof s === 'string' && s.trim()).slice(0, n).map((s) => scrub(s, len));
+function verdictOf(j, id) { // -> internal record {view, repo (abs, never exposed), sid8} or null
+  if (!j || typeof j !== 'object' || Array.isArray(j) || j.schema !== 'aos.verdict/1' || j.id !== id || typeof j.accepted !== 'boolean' || typeof j.integrity !== 'boolean') return null;
+  const repo = typeof j.repo === 'string' && path.isAbsolute(j.repo) ? path.posix.normalize(j.repo).replace(/\/+$/, '') || '/' : null;
+  const rej = (Array.isArray(j.rejections) ? j.rejections : []).filter((r) => r && typeof r === 'object').slice(0, 20)
+    .map((r) => ({ kind: typeof r.kind === 'string' && VKIND_RE.test(r.kind) ? r.kind : 'other', detail: scrub(r.detail, 160) }));
+  const checks = (Array.isArray(j.checks) ? j.checks : []).filter((c) => c && typeof c === 'object').slice(0, 20).map((c) => ({
+    cmd: (Array.isArray(c.argv) ? c.argv : []).filter((a) => typeof a === 'string').slice(0, 30).map((a) => scrub(a, 80)).join(' ').slice(0, 200),
+    ok: c.ok === true, exit_code: Number.isInteger(c.exit_code) ? c.exit_code : null, duration_ms: Math.round(nn(c.duration_ms)) }));
+  // verified = accepted; integrity = an integrity rejection (red); capability = rejected because checks failed (amber)
+  const verdict = j.accepted ? 'verified' : j.integrity ? 'integrity' : 'capability';
+  const view = { id, created_at: isoOrNull(j.created_at), repo_name: repo ? ctl(path.basename(repo) || '/', 60) : ctl(path.basename(String(j.repo_name || '')), 60),
+    base: typeof j.base === 'string' && SHA_RE.test(j.base) ? j.base.slice(0, 12) : null, base_ref: typeof j.base_ref === 'string' ? scrub(j.base_ref, 80) || null : null,
+    tree: j.tree === 'working' ? 'working' : typeof j.tree === 'string' && SHA_RE.test(j.tree) ? j.tree.slice(0, 12) : null,
+    accepted: j.accepted, integrity: j.integrity, verdict, kind: verdict === 'verified' ? null : (rej[0] ? rej[0].kind : null),
+    rejections: rej, warnings: strList(j.warnings, 20, 160), failing_tests: strList(j.failing_tests, 50, 160), checks, duration_ms: Math.round(nn(j.duration_ms)),
+    source: VSOURCES.has(j.source) ? j.source : 'unknown', tool_version: typeof j.tool_version === 'string' ? ctl(j.tool_version, 40) : null };
+  return { view, repo, sid8: typeof j.session_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(j.session_id) ? j.session_id.slice(0, 8) : null };
+}
+// newest first (by id = time, then created_at); deduped by id across roots (the newer file wins)
+function verdictsIndex() {
+  const now = Date.now();
+  if (now - verdictsScanAt < 1000) return verdictsView;
+  verdictsScanAt = now;
+  try {
+    const names = [];
+    for (const d of VERDICT_DIRS) {
+      let l = []; try { l = fs.readdirSync(d).slice(0, GOAL_DIRS_SCAN_MAX * 4); } catch { l = []; }
+      for (const n of l) if (n.endsWith('.json') && VID_RE.test(n.slice(0, -5))) names.push({ id: n.slice(0, -5), f: path.join(d, n) });
+    }
+    names.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    const byId = new Map(), keep = new Set();
+    let sig = '';
+    for (const { id, f } of names.slice(0, VERDICT_SCAN_MAX)) {
+      let st = null; try { st = fs.lstatSync(f); } catch { st = null; }
+      if (!st || !st.isFile() || st.size > VERDICT_FILE_MAX) continue; // symlinks and oversized files are skipped
+      const s = sigOf(st); let e = verdictEntries.get(f);
+      if (!e || e.sig !== s) { let j; try { j = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { j = undefined; } e = { sig: s, v: verdictOf(j, id), m: st.mtimeMs }; verdictEntries.set(f, e); }
+      keep.add(f);
+      if (!e.v) continue;
+      const o = byId.get(id); if (!o || e.m > o.m) byId.set(id, e);
+      sig += f + '=' + s + ';';
+    }
+    for (const k of [...verdictEntries.keys()]) if (!keep.has(k)) verdictEntries.delete(k);
+    const list = [...byId.values()].map((e) => e.v).sort((a, b) => (a.view.id < b.view.id ? 1 : a.view.id > b.view.id ? -1 : (b.view.created_at || '').localeCompare(a.view.created_at || '')));
+    verdictsView = { list, sig };
+  } catch { /* keep the previous view */ }
+  return verdictsView;
+}
+// session agents (label -> sid8, from the fold) get the newest verdict of their session; the verdict gets the agent label back
+function verdictLinks(sidOf) {
+  const bySid = new Map(), agentOf = new Map();
+  for (const [label, sid] of sidOf) if (sid && sid !== 'unknown') bySid.set(sid.slice(0, 8), label);
+  const guardOf = new Map();
+  for (const v of verdictsIndex().list) { const label = v.sid8 ? bySid.get(v.sid8) : null; if (!label) continue; agentOf.set(v.view.id, label); if (!guardOf.has(label)) guardOf.set(label, { id: v.view.id, verdict: v.view.verdict, kind: v.view.kind, created_at: v.view.created_at, repo_name: v.view.repo_name }); }
+  return { agentOf, guardOf };
+}
+const withAgent = (v, agentOf) => (agentOf.has(v.id) ? { ...v, agent: agentOf.get(v.id) } : v);
+let liveSidOf = new Map(); // label -> sid of the live sessions in the newest live /api/state (for /api/verdicts links)
+function verdictList(sidOf, limit) { const { agentOf } = verdictLinks(sidOf); return verdictsIndex().list.slice(0, limit).map((v) => withAgent(v.view, agentOf)); }
+// /api/state summary: counts over the verdicts read + the newest verdict per repo (repos keyed by full path internally, newest first)
+function verdictSummary(agentOf) {
+  const list = verdictsIndex().list, seen = new Set(), latest = [], c = { verified: 0, integrity: 0, capability: 0 };
+  for (const v of list) {
+    c[v.view.verdict]++;
+    const k = v.repo || 'name:' + v.view.repo_name; if (seen.has(k) || latest.length >= VERDICT_LATEST_MAX) continue; seen.add(k);
+    const x = v.view; latest.push(withAgent({ id: x.id, created_at: x.created_at, repo_name: x.repo_name, verdict: x.verdict, kind: x.kind, rejections: x.rejections.length, failing_tests: x.failing_tests.length, source: x.source }, agentOf));
+  }
+  return { total: list.length, verified: c.verified, integrity: c.integrity, capability: c.capability, latest };
+}
+
 // ---------- fold ----------
 const FOLD_N = 5000, WIN_MS = 5 * 60 * 1000, OPEN_MAX_MS = 30 * 60 * 1000;
 const MAIN_RUN = new Set(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']); // main-session events that open a run segment
@@ -814,7 +897,12 @@ function assemble(list, ref, replay) {
     cost: f.cost, collisions: f.collisions, alerts: f.alerts.slice(-20),
   };
   if (replay) out.replay = true;
-  else { out.goals = withWorkers(goalSummaries(STATE_GOALS_MAX), f.agents); withExactCost(out, f.sidOf); } // replay omits goals and OTel cost (not time-sliced)
+  else { // replay omits goals, guard verdicts and OTel cost (not time-sliced)
+    out.goals = withWorkers(goalSummaries(STATE_GOALS_MAX), f.agents);
+    liveSidOf = f.sidOf; const vl = verdictLinks(f.sidOf); out.verdicts = verdictSummary(vl.agentOf);
+    if (vl.guardOf.size) out.agents = out.agents.map((a) => (vl.guardOf.has(a.id) ? { ...a, guard: vl.guardOf.get(a.id) } : a));
+    withExactCost(out, f.sidOf);
+  }
   return out;
 }
 
@@ -847,7 +935,7 @@ function receiveMetrics(req, res) {
 let liveCache = { key: '', v: null };
 function build() {
   ingest();
-  const now = Date.now(), key = ingestSig + ':' + Math.floor(now / 1000) + ':' + goalsIndex().sig;
+  const now = Date.now(), key = ingestSig + ':' + Math.floor(now / 1000) + ':' + goalsIndex().sig + ':' + verdictsIndex().sig;
   if (liveCache.key === key) return liveCache.v;
   const v = assemble(recs.slice(-FOLD_N), now, false);
   liveCache = { key, v };
@@ -1036,6 +1124,10 @@ const server = http.createServer((req, res) => {
       if (!GID_RE.test(id)) return send(res, 404, { error: 'not found' });
       const d = goalDetail(id);
       return d ? send(res, 200, { goal: withWorkers([d], build().agents)[0] }) : send(res, 404, { error: 'not found' });
+    }
+    if (pathname === '/api/verdicts') { // read-only guard verdicts, newest first (max 50)
+      if (req.method !== 'GET' && req.method !== 'HEAD') { req.resume(); return send(res, 405, { error: 'method not allowed' }); }
+      return send(res, 200, { verdicts: (build(), verdictList(liveSidOf, VERDICTS_API_MAX)) });
     }
     if (pathname === '/v1/metrics') return receiveMetrics(req, res);
     if (pathname === '/v1/logs' || pathname === '/v1/traces') { req.resume(); return send(res, 404, { error: 'only metrics are read: set OTEL_LOGS_EXPORTER=none' }); }
