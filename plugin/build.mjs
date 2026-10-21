@@ -4,6 +4,7 @@
 // Copies (into plugin/, never editing the originals):
 //   ../monitor.mjs           -> monitor.mjs           (patched: data dir)
 //   ../hooks/aos-hook.mjs    -> hooks/aos-hook.mjs    (patched: data dir)
+//   ../remotes.mjs           -> remotes.mjs           (cross-machine collector)
 //   ../ui/                   -> ui/
 //   ../cli/                  -> cli/                  (only if present)
 // plugin/defaults/ (seeded config.json / prices.json) is tracked source and is not generated: live/ holds personal
@@ -100,6 +101,7 @@ function build() {
   // Monitor and hook: copied from the originals, with the data-dir patch.
   copyPatched('monitor.mjs', 'monitor.mjs');
   copyPatched('hooks/aos-hook.mjs', 'hooks/aos-hook.mjs');
+  copyPatched('remotes.mjs', 'remotes.mjs');
 
   // UI (whole folder), and CLI if the other agent has created it.
   syncDir(path.join(REPO, 'ui'), 'ui');

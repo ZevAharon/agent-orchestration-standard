@@ -62,6 +62,7 @@ test: ## Run every test suite
 	@echo "==> orch rules + draft"; out="$$(node ui/orch-rules.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
 	@echo "==> orch presence"; out="$$(node ui/orch-presence.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
 	@echo "==> needs-you"; out="$$(node ui/needs-you.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
+	@echo "==> machines (cross-machine UI)"; out="$$(node ui/machines.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
 	@echo "==> timeline"; out="$$(node ui/timeline.test.mjs)" || { echo "$$out" | grep FAIL; exit 1; }; echo "$$out" | tail -1
 	@echo "==> monitor goals + hook tagging"; out="$$(node --test tests-monitor/*.test.mjs 2>&1)" || { echo "$$out" | grep -E "^not ok|error:" | head -20; exit 1; }; echo "$$out" | grep -E '^# (pass|fail)' | tr '\n' ' '; echo
 

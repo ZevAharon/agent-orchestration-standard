@@ -39,6 +39,8 @@ try{var t=localStorage.getItem('aos.theme');if(t==='light'||t==='dark')document.
 
   <div id="live-ind" class="live-ind" hidden tabindex="0" role="status" title="Observing Claude Code via hooks." aria-label="Live. Read-only. Observing Claude Code via hooks."><i class="li-dot"></i><b>Live</b><span>Read-only</span></div>
 
+  <div id="machines" class="machines" hidden></div>
+
   <button id="streams-btn" class="theme-btn streams-btn" type="button" data-state="full" aria-label="Particle streams: full. Switch to quiet" title="Particle streams: full. Click or press Q to switch to quiet"><svg viewBox="0 0 16 16" aria-hidden="true"><g class="si-full"><circle cx="3" cy="4" r="1.1"/><circle cx="8" cy="4" r="1.1"/><circle cx="13" cy="4" r="1.1"/><circle cx="5.5" cy="8" r="1.1"/><circle cx="10.5" cy="8" r="1.1"/><circle cx="3" cy="12" r="1.1"/><circle cx="8" cy="12" r="1.1"/><circle cx="13" cy="12" r="1.1"/></g><g class="si-quiet"><circle cx="8" cy="8" r="1.1"/><path d="M2 8h3M11 8h3" fill="none" stroke-linecap="round"/></g><g class="si-lines"><path d="M2 12L14 4" fill="none" stroke-linecap="round"/></g></svg><span class="theme-l">Streams: Full</span></button>
   <button id="theme-btn" class="theme-btn" type="button" data-state="auto" aria-label="Theme: auto (follows system). Switch to light" title="Theme: auto (follows system). Click or press T to switch to light"><svg viewBox="0 0 16 16" aria-hidden="true"><g class="ti-auto"><circle cx="8" cy="8" r="5.2" fill="none"/><path d="M8 2.8a5.2 5.2 0 0 1 0 10.4z" stroke="none"/></g><g class="ti-light"><circle cx="8" cy="8" r="2.8" fill="none"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1" fill="none" stroke-linecap="round"/></g><g class="ti-dark"><path d="M12.9 9.6A5.4 5.4 0 0 1 6.4 3.1a5.4 5.4 0 1 0 6.5 6.5z" fill="none" stroke-linejoin="round"/></g></svg><span class="theme-l">Auto</span></button>
 
@@ -114,7 +116,8 @@ try{var t=localStorage.getItem('aos.theme');if(t==='light'||t==='dark')document.
     </div>
   </div>
 </section>
-<script src="app.js?v=30"></script>
+<script src="machines.js?v=1"></script>
+<script src="app.js?v=31"></script>
 <script src="particles.js?v=18"></script>
 <script src="boot.js?v=2"></script>
 <script src="global.js?v=4"></script>

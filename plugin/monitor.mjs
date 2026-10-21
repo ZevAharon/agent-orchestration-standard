@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
+import { parseRemotes, remotesFromEnv, createCollector, mergeState } from './remotes.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI = path.join(ROOT, 'ui');
@@ -60,7 +61,7 @@ function cfg() {
   return { stuck: base, byModel, minStuck: Math.min(base, ...Object.values(byModel)),
     errIdleS: 60, errRunLen: 3, errWinMs: 5 * 60 * 1000,
     notify: { enabled: n.enabled === true, on: Array.isArray(n.on) ? n.on.filter((k) => typeof k === 'string') : ['needs_input', 'stuck'], sound: n.sound === true },
-    projects: aliasMap(c.projects) };
+    projects: aliasMap(c.projects), remotes: c.remotes };
 }
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'unknown';
 function priceFor(model) {
@@ -964,6 +965,20 @@ function serveStatic(req, res, pathname) {
   } catch { send(res, 404, { error: 'not found' }); }
 }
 
+// ---------- cross-machine (opt-in, read-only; polls other dashboards over ssh, opens no port) ----------
+let collector = null, collectorKey = null, cfgStamp = null;
+function remoteCollector() {
+  // config.json is only re-read when its mtime changes; the remote list is parsed once per call.
+  let stamp = 'none'; try { const st = fs.statSync(path.join(LIVE, 'config.json')); stamp = st.mtimeMs + ':' + st.size; } catch {}
+  if (collectorKey !== null && stamp === cfgStamp) return collector;
+  cfgStamp = stamp;
+  const warnings = [], list = remotesFromEnv(process.env, (m) => warnings.push(m)) || parseRemotes(cfg().remotes, (m) => warnings.push(m)), key = JSON.stringify(list);
+  if (key !== collectorKey) { collectorKey = key; for (const m of warnings) console.error('[remotes] ' + m); collector = list.length ? createCollector({ remotes: list }) : null; }
+  return collector;
+}
+function stateWithMachines() { const c = remoteCollector(); return mergeState(build(), c ? c.snapshot() : []); }
+setInterval(() => { const c = remoteCollector(); if (c) c.tick().catch(() => {}); }, 1000).unref();
+
 const server = http.createServer((req, res) => {
   try {
     if (!hostAllowed(req)) return send(res, 403, { error: 'forbidden host' });
@@ -972,7 +987,8 @@ const server = http.createServer((req, res) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });
       const at = new URL(req.url, 'http://localhost').searchParams.get('at');
       if (at) { const ms = Date.parse(at); if (!Number.isFinite(ms)) return send(res, 400, { error: 'bad at' }); return send(res, 200, buildAt(ms)); }
-      return send(res, 200, build());
+      if (new URL(req.url, 'http://localhost').searchParams.get('local')) return send(res, 200, build()); // what remote monitors poll: never re-aggregated
+      return send(res, 200, stateWithMachines());
     }
     if (pathname === '/api/timeline') {
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });
