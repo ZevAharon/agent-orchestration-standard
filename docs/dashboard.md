@@ -46,19 +46,22 @@ Data: `<orch dir>/verdicts/<id>.json` (`id` matching `v-YYYYMMDD-HHMMSS-<6 hex>`
 
 ### Auto-verify on Stop (opt-in, off by default)
 
-The plugin ships a Stop hook (`hooks/aos-guard.mjs`) that does nothing until you list repos in the monitor's `config.json` (`~/.claude/plugins/data/aos-dashboard-aos-local/live/config.json`, or `live/config.json` in a checkout):
+The plugin ships a SessionStart + Stop hook (`hooks/aos-guard.mjs`) that does nothing until you list repos in the monitor's `config.json` (`~/.claude/plugins/data/aos-dashboard-aos-local/live/config.json`, or `live/config.json` in a checkout):
 
 ```json
 {
   "guard": {
-    "repos": ["/abs/path/to/repo"],
+    "repos": ["/abs/path/to/repo", { "path": "/abs/path/to/other", "base": "<40-hex commit sha>" }],
     "cli": "/abs/path/to/aos-orchestrator/bin/aos-orch.mjs",
     "timeout_s": 300
   }
 }
 ```
 
-When a session in one of those repos finishes a turn, the hook starts `node <cli> verify --repo <listed repo> --source hook --session <session id>` in the background and returns at once; the verdict then appears on the session node.
+When a session starts in one of those repos, the hook records the repo's `HEAD` as that session's base (`guard/bases/<session id>.json`: `{repo, sha, at}`). When the session finishes a turn, the hook starts `node <cli> verify --repo <listed repo> --base <recorded sha> --source hook --session <session id>` in the background and returns at once; the verdict then appears on the session node.
+
+- **Base.** `verify` diffs against the commit recorded at session start, so an agent that commits its work onto `main` (or any branch) is still judged on everything it changed. The first record for a session is kept (a resume or compaction cannot move it). If there is no record (for example the hook was installed mid-session, or the session id is not valid), the repo's explicit `base` from config is used (a 40-hex sha only; a branch name is refused because the agent can move it); with neither, the run is skipped and `guard.log` says why. It never falls back to `main`.
+- `HEAD` is read with `git rev-parse` started without a shell, with global and system git config ignored (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), hooks and fsmonitor off, and a 5 s timeout; only a 40-hex result is stored. At most 200 base records are kept (oldest removed first).
 
 - It never blocks or delays the session (registered `async`; the hook only spawns a detached runner and exits), never prints into the conversation and always exits 0.
 - Every config value is validated: `repos` and `cli` must be absolute and are resolved with `realpath`; a repo must be an existing directory, `cli` an existing file, `timeout_s` 10 to 3600 (default 300). The session's `cwd` must be inside a listed repo after `realpath` (a symlink out of the repo does not count). The session id is passed only if it matches `^[A-Za-z0-9_-]{1,128}$`.
@@ -75,7 +78,7 @@ Open http://127.0.0.1:4318/?debug=1 to show a small on-screen recorder (`ui/debu
 ## Security
 
 - **Threat model.** The monitor is a local, read-only observer. It binds `127.0.0.1` only, rejects requests whose `Host` or `Origin` is not `localhost`/`127.0.0.1` (DNS-rebinding and cross-site protection), sends no CORS headers, has no write endpoints except the optional in-memory OpenTelemetry receiver at `/v1/metrics` (any local process can post figures to it; see [otel.md](otel.md)), and serves only the files under `ui/` (dotfiles, traversal and symlinks out of `ui/` are refused). Anyone who can run code as your user can read the log anyway; the design goal is that nothing leaves the machine and no other site or user can reach it.
-- **Guard auto-verify (opt-in).** With `guard` configured, every finished turn in a listed repo runs that repo's tests through `aos-orch verify` (the orchestrator's sandbox) in the background, as your user. That executes the repo's own test code, which an agent may just have edited, so it is opt-in per repo: list only repos whose tests you would run yourself. The monitor itself stays read-only; only the Stop hook starts processes, and nothing reaches it over HTTP.
+- **Guard auto-verify (opt-in).** With `guard` configured, every finished turn in a listed repo runs that repo's tests through `aos-orch verify` (the orchestrator's sandbox) in the background, as your user. That executes the repo's own test code, which an agent may just have edited, so it is opt-in per repo: list only repos whose tests you would run yourself. The base it verifies against is the `HEAD` recorded at session start (or an explicit sha in config), never a branch the agent could move; without one no run happens. An agent that can write the data folder as your user could still forge the record, as it could the verdict files. The monitor itself stays read-only; only the guard hook starts processes, and nothing reaches it over HTTP.
 - **What is stored.** See the exact field list under Privacy in [plugin/README.md](../plugin/README.md). Agent names and task labels come from Claude Code tool calls, so the UI and terminal view treat them as untrusted text (never rendered as HTML or terminal escape codes). New log files are created owner-only (`0600`, directory `0700`).
 - **How to erase.** Delete the data folder: `~/.claude/plugins/data/aos-dashboard-aos-local/live` (or your `AOS_LIVE_DIR`); `make uninstall` removes the plugin but keeps the data.
 - **Reporting.** Please open a GitHub issue. For anything sensitive, open an issue asking for a private contact rather than posting details.
