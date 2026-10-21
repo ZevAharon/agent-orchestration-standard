@@ -562,19 +562,23 @@ function verdictOf(j, id) { // -> internal record {view, repo (abs, never expose
   const rej = (Array.isArray(j.rejections) ? j.rejections : []).filter((r) => r && typeof r === 'object').slice(0, 20)
     .map((r) => ({ kind: typeof r.kind === 'string' && VKIND_RE.test(r.kind) ? r.kind : 'other', detail: scrub(r.detail, 160) }));
   const checks = (Array.isArray(j.checks) ? j.checks : []).filter((c) => c && typeof c === 'object').slice(0, 20).map((c) => ({
-    cmd: (Array.isArray(c.argv) ? c.argv : []).filter((a) => typeof a === 'string').slice(0, 30).map((a) => scrub(a, 80)).join(' ').slice(0, 200),
+    cmd: (typeof c.argv === 'string' ? scrub(c.argv, 200) : (Array.isArray(c.argv) ? c.argv : []).filter((a) => typeof a === 'string').slice(0, 30).map((a) => scrub(a, 80)).join(' ')).slice(0, 200), // the contract's argv is a joined string; an array is accepted too
     ok: c.ok === true, exit_code: Number.isInteger(c.exit_code) ? c.exit_code : null, duration_ms: Math.round(nn(c.duration_ms)) }));
   // verified = accepted; integrity = an integrity rejection (red); capability = rejected because checks failed (amber)
   const verdict = j.accepted ? 'verified' : j.integrity ? 'integrity' : 'capability';
   const view = { id, created_at: isoOrNull(j.created_at), repo_name: repo ? ctl(path.basename(repo) || '/', 60) : ctl(path.basename(String(j.repo_name || '')), 60),
     base: typeof j.base === 'string' && SHA_RE.test(j.base) ? j.base.slice(0, 12) : null, base_ref: typeof j.base_ref === 'string' ? scrub(j.base_ref, 80) || null : null,
     tree: j.tree === 'working' ? 'working' : typeof j.tree === 'string' && SHA_RE.test(j.tree) ? j.tree.slice(0, 12) : null,
-    accepted: j.accepted, integrity: j.integrity, verdict, kind: verdict === 'verified' ? null : (rej[0] ? rej[0].kind : null),
+    accepted: j.accepted, integrity: j.integrity, verdict, kind: verdict === 'verified' ? null : headlineKind(rej),
     rejections: rej, warnings: strList(j.warnings, 20, 160), failing_tests: strList(j.failing_tests, 50, 160), checks, duration_ms: Math.round(nn(j.duration_ms)),
     source: VSOURCES.has(j.source) ? j.source : 'unknown', tool_version: typeof j.tool_version === 'string' ? ctl(j.tool_version, 40) : null };
   return { view, repo, sid8: typeof j.session_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(j.session_id) ? j.session_id.slice(0, 8) : null };
 }
 // newest first (by id = time, then created_at); deduped by id across roots (the newer file wins)
+// The headline reason: the most specific integrity kind when there is one ("tests edited" says more than the generic "protected tests failed"
+// that always accompanies it), else the first rejection.
+const GENERIC_KINDS = new Set(['protected_tests_failed', 'other']);
+const headlineKind = (rej) => (rej.find((r) => !GENERIC_KINDS.has(r.kind)) || rej[0] || { kind: null }).kind;
 function verdictsIndex() {
   const now = Date.now();
   if (now - verdictsScanAt < 1000) return verdictsView;

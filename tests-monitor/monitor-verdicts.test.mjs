@@ -79,7 +79,7 @@ test('malformed, oversized, wrong schema, bad ids, mismatched ids and symlinks a
   assert.deepEqual(v.map((x) => x.id), ['v-20261021-130000-000008', 'v-20261021-120000-cccccc', 'v-20261021-110000-bbbbbb', 'v-20261021-100000-aaaaaa']);
   const j = v[0];
   assert.equal(j.repo_name, 'evil'); assert.deepEqual(j.rejections, []); assert.equal(j.kind, null); assert.equal(j.verdict, 'integrity');
-  assert.deepEqual(j.checks, [{ cmd: '', ok: false, exit_code: null, duration_ms: 0 }]); assert.deepEqual(j.failing_tests, ['a b t.js: x']);
+  assert.deepEqual(j.checks, [{ cmd: 'rm -rf .', ok: false, exit_code: null, duration_ms: 0 }]); // argv as a joined string is the contract's form: shown as text (absolute paths scrubbed), never run assert.deepEqual(j.failing_tests, ['a b t.js: x']);
   assert.equal(j.source, 'unknown'); assert.equal(j.base, null); assert.equal(j.tree, null); assert.equal(j.tool_version, null);
   assert.equal((await M.get('/api/state')).json.verdicts.total, 4);
   const keep = new Set(fs.readdirSync(path.join(FIXTURES, 'verdicts')));
@@ -112,4 +112,17 @@ test('no verdicts dir: empty summary; read-only guarantees on /api/verdicts', as
   assert.equal(await req('GET', { Host: 'evil.example' }), 403);
   assert.equal(await req('GET', { Origin: 'http://evil.example' }), 403);
   for (const m of ['POST', 'PUT', 'DELETE']) assert.equal(await req(m), 405);
+});
+
+test('a record written by the real `aos-orch verify` (argv as a joined string; generic + specific rejection kinds) maps correctly', async () => {
+  // fixture: an actual orchestrator verdict for a rewritten test (repo path replaced, id set to sort newest), not hand-written
+  const real = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'real-orchestrator-verdict.json'), 'utf8'));
+  put(real.id, real); await sleep(1150); // the verdict index is cached for ~1 s
+  try {
+    const v = (await M.get('/api/verdicts')).json.verdicts.find((x) => x.id === real.id);
+    assert.ok(v, 'the real record is listed');
+    assert.equal(v.checks[0].cmd, 'node --test', 'a joined-string argv is shown as the command');
+    assert.equal(v.kind, 'tests_edited', 'the headline is the specific integrity kind, not the generic protected_tests_failed');
+    assert.deepEqual(v.rejections.map((r) => r.kind), ['protected_tests_failed', 'tests_edited']);
+  } finally { fs.rmSync(path.join(VD, real.id + '.json'), { force: true }); await sleep(1150); }
 });
