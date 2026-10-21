@@ -5,6 +5,7 @@
 //   ../monitor.mjs           -> monitor.mjs           (patched: data dir)
 //   ../hooks/aos-hook.mjs    -> hooks/aos-hook.mjs    (patched: data dir)
 //   ../remotes.mjs           -> remotes.mjs           (cross-machine collector)
+//   ../otel.mjs              -> otel.mjs              (optional OpenTelemetry cost receiver)
 //   ../ui/                   -> ui/
 //   ../cli/                  -> cli/                  (only if present)
 // plugin/defaults/ (seeded config.json / prices.json) is tracked source and is not generated: live/ holds personal
@@ -102,6 +103,7 @@ function build() {
   copyPatched('monitor.mjs', 'monitor.mjs');
   copyPatched('hooks/aos-hook.mjs', 'hooks/aos-hook.mjs');
   copyPatched('remotes.mjs', 'remotes.mjs');
+  copyPatched('otel.mjs', 'otel.mjs');
 
   // UI (whole folder), and CLI if the other agent has created it.
   syncDir(path.join(REPO, 'ui'), 'ui');

@@ -3,6 +3,8 @@
 No tagged releases yet; entries are by theme, newest first.
 
 ## Unreleased
+- Optional exact cost: the monitor accepts Claude Code's OpenTelemetry metrics (OTLP http/json on /v1/metrics) and shows exact cost split into main, subagents (by type) and background calls (docs/otel.md). Suggested in a LinkedIn comment.
+- `aos-dash --json` and the cross-machine collector (SSH, read-only).
 - Spec and orchestrator split out into their own repos (aos-1-spec, aos-orchestrator); this repo keeps the UI, monitor and plugin.
 - Monitor tests decoupled from the orchestrator via golden goal fixtures; on-disk contract documented.
 - Goals view: per-task outcome summary; goals UI backed by the orchestrator control server.
