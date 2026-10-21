@@ -45,6 +45,7 @@ The GOALS button and the "Needs you" badge stay hidden until a goal exists or th
 - [aos-1-spec](https://github.com/tomtomsatnav/aos-1-spec): normative specification, schemas, conformance validator, reference runner
 - [aos-orchestrator](https://github.com/tomtomsatnav/aos-orchestrator): orchestrator engine and its design doc
 - [docs/dashboard.md](docs/dashboard.md): the Claude Code dashboard, highlights, debugging, security and threat model
+- [docs/dashboard.md#guard-view](docs/dashboard.md#guard-view): the Guard view (verify verdicts on sessions, Needs-you on integrity rejections) and the opt-in auto-verify Stop hook
 - [docs/architecture.md](docs/architecture.md): how events flow from hooks to the UI
 - [docs/screenshots.md](docs/screenshots.md): screenshot gallery
 - [docs/cross-machine.md](docs/cross-machine.md): opt-in, read-only view of agents and usage across several machines over your existing SSH access (no new ports)

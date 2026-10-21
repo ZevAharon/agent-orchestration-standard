@@ -158,3 +158,29 @@ fieldset.orch-field{border:0;padding:0;margin:0;min-width:0}
 .orch-fold summary{cursor:pointer}
 .orch-pre{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:12em;overflow:auto;font:inherit}
 .orch-werr .orch-pre{color:rgb(var(--errored-rgb))}
+
+/* GUARD view (ui/guard.js): verified = accent, integrity rejection = errored (red), capability rejection = stalled (amber); theme tokens only */
+.guard-hbtn[hidden],.guard-dot[hidden]{display:none!important}
+.guard-dot{width:7px;height:7px;border-radius:50%;background:rgb(var(--errored-rgb));box-shadow:0 0 0 2px var(--bg)}
+.guard-chip,.guard-badge{font:700 9.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:3px 5px;border-radius:2px;border:1px solid var(--line-2);color:var(--muted);background:none}
+.guard-badge{margin:0 0 0 8px}
+button.guard-badge{cursor:pointer}
+button.guard-badge:focus-visible{outline:1px solid var(--accent-hi);outline-offset:2px}
+.g-verified.guard-chip,.g-verified.guard-badge{color:var(--running);border-color:rgb(var(--running-rgb)/.6)}
+.g-integrity.guard-chip,.g-integrity.guard-badge{color:var(--bg);background:rgb(var(--errored-rgb));border-color:rgb(var(--errored-rgb))}
+.g-capability.guard-chip,.g-capability.guard-badge{color:var(--stalled);border-color:rgb(var(--stalled-rgb)/.6)}
+.guard-list,.guard-l{list-style:none;margin:0;padding:0}
+.guard-v{padding:10px 4px 10px 8px;border-bottom:1px solid var(--line);border-left:2px solid transparent;outline:none}
+.guard-v.g-integrity{border-left-color:rgb(var(--errored-rgb))}.guard-v.g-capability{border-left-color:rgb(var(--stalled-rgb))}
+.guard-v.focus{background:var(--hover)}
+.guard-r1{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.guard-repo{flex:1 1 120px;min-width:0;color:var(--text);font-weight:600;overflow-wrap:anywhere}
+.guard-meta{margin-top:3px;font-size:10.5px;letter-spacing:.04em;color:var(--muted);overflow-wrap:anywhere}
+.guard-h{margin:8px 0 2px;font:600 9.5px/1.6 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.guard-l li{font-size:11px;line-height:1.45;color:var(--text-2);overflow-wrap:anywhere;padding:1px 0}
+.guard-k{color:var(--text);font-weight:700}
+.guard-reasons li::before,.guard-failing li::before{content:"\2717  ";color:rgb(var(--errored-rgb))}
+.guard-warn li::before{content:"!  ";color:var(--stalled)}
+.guard-checks li.ok .guard-res{color:var(--running)}.guard-checks li.bad .guard-res{color:rgb(var(--errored-rgb))}
+.guard-cmd{font:inherit;color:var(--text)}
+@media (max-width:720px){.guard-hbtn{order:2;min-height:36px}button.guard-badge{min-height:36px;padding:0 10px}.guard-v{padding:12px 4px 12px 8px}}

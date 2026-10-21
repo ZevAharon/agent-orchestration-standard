@@ -21,3 +21,7 @@ Regenerate (only while `./orchestrator` exists; uses the fake claude, never a re
 `gen-fixtures.mjs` is the only file in `tests-monitor/` that may reference the orchestrator, and the tests never run it.
 Timestamps are kept as generated; tests do not depend on their values except where they patch them relative to "now".
 Contract the fixtures must satisfy: `docs/orch-state-contract.md`.
+
+`verdicts/` holds three hand-written `aos.verdict/1` records (from the contract, not generated): `…aaaaaa` accepted (shop), `…bbbbbb`
+an integrity rejection (shop, `tests_edited` + `vacuous_pass`, linked to session `sessAAAA…`, absolute paths in its text),
+`…cccccc` a capability rejection (api, 2 failing tests). `monitor-verdicts.test.mjs` copies them into a temp `<orch>/verdicts/`.

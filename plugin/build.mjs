@@ -4,6 +4,7 @@
 // Copies (into plugin/, never editing the originals):
 //   ../monitor.mjs           -> monitor.mjs           (patched: data dir)
 //   ../hooks/aos-hook.mjs    -> hooks/aos-hook.mjs    (patched: data dir)
+//   ../hooks/aos-guard.mjs   -> hooks/aos-guard.mjs   (patched: data dir; opt-in guard auto-verify)
 //   ../remotes.mjs           -> remotes.mjs           (cross-machine collector)
 //   ../otel.mjs              -> otel.mjs              (optional OpenTelemetry cost receiver)
 //   ../ui/                   -> ui/
@@ -29,6 +30,10 @@ const PATCHES = {
   'hooks/aos-hook.mjs': {
     from: "const dir = process.env.AOS_LIVE_DIR || path.join(root, 'live');",
     to: `const dir = process.env.AOS_LIVE_DIR || (process.env.CLAUDE_PLUGIN_DATA ? path.join(process.env.CLAUDE_PLUGIN_DATA, 'live') : path.join(root, 'live')); // ${PATCH_NOTE}`,
+  },
+  'hooks/aos-guard.mjs': {
+    from: "const LIVE = process.env.AOS_LIVE_DIR || path.join(ROOT, 'live');",
+    to: `const LIVE = process.env.AOS_LIVE_DIR || (process.env.CLAUDE_PLUGIN_DATA ? path.join(process.env.CLAUDE_PLUGIN_DATA, 'live') : path.join(ROOT, 'live')); // ${PATCH_NOTE}`,
   },
   'monitor.mjs': {
     from: "const LIVE = process.env.AOS_LIVE_DIR || path.join(ROOT, 'live');",
@@ -102,6 +107,7 @@ function build() {
   // Monitor and hook: copied from the originals, with the data-dir patch.
   copyPatched('monitor.mjs', 'monitor.mjs');
   copyPatched('hooks/aos-hook.mjs', 'hooks/aos-hook.mjs');
+  copyPatched('hooks/aos-guard.mjs', 'hooks/aos-guard.mjs'); // opt-in guard auto-verify (Stop hook; off unless config.guard is set)
   copyPatched('remotes.mjs', 'remotes.mjs');
   copyPatched('otel.mjs', 'otel.mjs');
 
