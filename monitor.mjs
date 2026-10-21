@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { parseRemotes, remotesFromEnv, createCollector, mergeState } from './remotes.mjs';
+import { createOtelStore, BODY_MAX as OTEL_BODY_MAX } from './otel.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI = path.join(ROOT, 'ui');
@@ -734,11 +735,12 @@ function fold(list, ref) {
   const fin = finalNames(visible, rank);
   const PF = (p) => fin.get(p.key) || { name: p.alias || p.base, id: slug(p.alias || p.base) };
 
-  const agents = [], tasks = [];
+  const agents = [], tasks = [], sidOf = new Map(); // session agent label -> sid (exact OTel cost is keyed by session.id)
   for (const s of sessions.values()) {
     if (!sessLive(s)) continue;
     const running = s.active > 0 && ref - s.active < RUN_S * 1000; // turn open (prompt -> Stop), idle after 15 min of silence
     const tv = toolView(s), u = usageOf(s.sid, null), sf = stuckOf(s, s.id, running, subsRunning(s.sid)), p = pOf(s.sid), ek = errOf(s, ref, s.id);
+    sidOf.set(s.id, s.sid);
     const ranMs = s.closed + (s.seg !== null ? Math.max(0, (running ? ref : s.last) - s.seg) : 0), ran = runS(ranMs);
     agents.push({ id: s.id, role: `orchestrator: Claude Code session${s.cwd ? ' in ' + s.cwd : ''}`, capabilities: ['claude-code'], can_delegate: true,
       status: ek ? 'errored' : running ? 'running' : 'idle', error_kind: ek, recent_failures: recentF(s, ref), current_task: null, last_event_at: iso(s.last),
@@ -790,7 +792,7 @@ function fold(list, ref) {
 
   events.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)); events.forEach((e, i) => { e.seq = i; });
   alerts.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-  return { agents, tasks, events, alerts, collisions, cost, markers, projects, tickMap };
+  return { agents, tasks, events, alerts, collisions, cost, markers, projects, tickMap, sidOf };
 }
 
 function assemble(list, ref, replay) {
@@ -812,8 +814,32 @@ function assemble(list, ref, replay) {
     cost: f.cost, collisions: f.collisions, alerts: f.alerts.slice(-20),
   };
   if (replay) out.replay = true;
-  else out.goals = withWorkers(goalSummaries(STATE_GOALS_MAX), f.agents); // replay omits goals (not time-sliced)
+  else { out.goals = withWorkers(goalSummaries(STATE_GOALS_MAX), f.agents); withExactCost(out, f.sidOf); } // replay omits goals and OTel cost (not time-sliced)
   return out;
+}
+
+// ---------- exact cost from Claude Code's OpenTelemetry metrics (optional; docs/otel.md) ----------
+const OTEL = createOtelStore();
+function withExactCost(out, sidOf) {
+  const ex = OTEL.summary(new Set(sidOf.values()));
+  if (!ex) return;
+  out.cost = { ...out.cost, exact: ex };
+  out.agents = out.agents.map((a) => { const sid = sidOf.get(a.id), v = sid ? ex.by_session[sid] : undefined; return v === undefined ? a : { ...a, usage: { ...a.usage, usd_exact_session: v } }; });
+}
+function receiveMetrics(req, res) {
+  if (req.method !== 'POST') { req.resume(); return send(res, 405, { error: 'method not allowed' }); }
+  if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) { req.resume(); return send(res, 415, { error: 'send OTLP as JSON: OTEL_EXPORTER_OTLP_PROTOCOL=http/json' }); }
+  const chunks = []; let n = 0, over = false;
+  req.on('data', (d) => { if (over) return; n += d.length; if (n > OTEL_BODY_MAX) { over = true; send(res, 413, { error: 'too large' }); req.resume(); return; } chunks.push(d); });
+  req.on('end', () => {
+    if (over) return;
+    let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(res, 400, { error: 'bad json' }); }
+    const r = OTEL.ingest(body);
+    if (!r.ok) return send(res, 400, { error: r.error });
+    liveCache = { key: '', v: null };
+    send(res, 200, {}); // ExportMetricsServiceResponse: full success
+  });
+  req.on('error', () => {});
 }
 
 let liveCache = { key: '', v: null };
@@ -1009,6 +1035,8 @@ const server = http.createServer((req, res) => {
       const d = goalDetail(id);
       return d ? send(res, 200, { goal: withWorkers([d], build().agents)[0] }) : send(res, 404, { error: 'not found' });
     }
+    if (pathname === '/v1/metrics') return receiveMetrics(req, res);
+    if (pathname === '/v1/logs' || pathname === '/v1/traces') { req.resume(); return send(res, 404, { error: 'only metrics are read: set OTEL_LOGS_EXPORTER=none' }); }
     if (pathname === '/api/control') { req.resume(); return send(res, 405, { ok: false, error: 'monitor is read-only' }); }
     if (pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });

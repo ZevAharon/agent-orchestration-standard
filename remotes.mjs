@@ -174,6 +174,7 @@ export function mergeState(local, snaps = []) {
     if (typeof u.usd_est === 'number') t.usd_est = (t.usd_est || 0) + u.usd_est;
   }
   out.cost = { total_usd_est: sumCost(costs.map((c) => c.total_usd_est)), tokens_total: costs.reduce((a, c) => a + num(c.tokens_total), 0), by_model, by_machine: byMachine };
+  if (local.cost && isObj(local.cost.exact)) out.cost.exact = { ...local.cost.exact, machine: LOCAL }; // OTel exact cost covers this machine only
   out.machines = machines;
   out.totals = { machines: machines.length, agents: out.agents.length, running: out.agents.filter((a) => a.status === 'running').length, tokens: out.cost.tokens_total, cost_usd_est: out.cost.total_usd_est };
   return out;
