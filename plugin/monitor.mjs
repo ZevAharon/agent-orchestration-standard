@@ -823,11 +823,13 @@ const OTEL = createOtelStore();
 function withExactCost(out, sidOf) {
   const ex = OTEL.summary(new Set(sidOf.values()));
   if (!ex) return;
-  out.cost = { ...out.cost, exact: ex };
+  const live = new Set(sidOf.values()).size;
+  out.cost = { ...out.cost, exact: { ...ex, live_sessions: live, complete: ex.sessions >= live } }; // complete: every session in view sends telemetry
   out.agents = out.agents.map((a) => { const sid = sidOf.get(a.id), v = sid ? ex.by_session[sid] : undefined; return v === undefined ? a : { ...a, usage: { ...a.usage, usd_exact_session: v } }; });
 }
 function receiveMetrics(req, res) {
   if (req.method !== 'POST') { req.resume(); return send(res, 405, { error: 'method not allowed' }); }
+  if (req.headers['content-encoding'] && !/^identity$/i.test(String(req.headers['content-encoding']))) { req.resume(); return send(res, 415, { error: 'send uncompressed: unset OTEL_EXPORTER_OTLP_COMPRESSION' }); }
   if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) { req.resume(); return send(res, 415, { error: 'send OTLP as JSON: OTEL_EXPORTER_OTLP_PROTOCOL=http/json' }); }
   const chunks = []; let n = 0, over = false;
   req.on('data', (d) => { if (over) return; n += d.length; if (n > OTEL_BODY_MAX) { over = true; send(res, 413, { error: 'too large' }); req.resume(); return; } chunks.push(d); });

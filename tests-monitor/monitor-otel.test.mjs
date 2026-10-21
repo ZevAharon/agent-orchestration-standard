@@ -56,7 +56,7 @@ test('delta exports add up per session, split by main / subagent / agent type; t
   assert.equal(r.status, 200);
   const st = (await M.get('/api/state')).json, ex = st.cost.exact;
   assert.ok(ex, 'cost.exact present');
-  assert.equal(ex.source, 'otel'); assert.equal(ex.total_usd, 1); assert.equal(ex.sessions, 1, 'a session not in view is not counted');
+  assert.equal(ex.source, 'otel'); assert.equal(ex.complete, true); assert.equal(ex.live_sessions, 1); assert.equal(ex.total_usd, 1); assert.equal(ex.sessions, 1, 'a session not in view is not counted');
   assert.deepEqual(ex.by_source, { main: 0.75, subagent: 0.25, auxiliary: 0, other: 0 });
   assert.deepEqual(ex.by_agent_type, { Explore: 0.25 });
   assert.deepEqual(ex.tokens, { input: 1000, output: 0, cache_read: 200, cache_write: 0 });
@@ -81,6 +81,7 @@ test('replay (?at=) never shows telemetry: it is not time-sliced', async () => {
 test('rejects: protobuf, bad JSON, not OTLP, too large, GET, foreign Origin; logs/traces say metrics only', async () => {
   assert.equal((await post(M.port, '/v1/metrics', 'x', { 'Content-Type': 'application/x-protobuf' })).status, 415);
   assert.equal((await post(M.port, '/v1/metrics', '{nope')).status, 400);
+  assert.equal((await post(M.port, '/v1/metrics', '{}', { 'Content-Encoding': 'gzip' })).status, 415);
   assert.equal((await post(M.port, '/v1/metrics', { hello: 1 })).status, 400);
   assert.equal((await post(M.port, '/v1/metrics', JSON.stringify({ resourceMetrics: [], pad: 'x'.repeat(1024 * 1024 + 10) }))).status, 413);
   assert.equal((await M.get('/v1/metrics')).status, 405);
@@ -100,4 +101,16 @@ test('store: bad values and labels are dropped; bounded series', () => {
   assert.equal(s.summary([SID]).total_usd, 2, 'an 8-char hook sid matches the full OTel session.id');
   for (let i = 0; i < 25000; i++) s.ingest(exportOf([{ metric: COST, v: 0.001, sid: 's' + i, attrs: { query_source: 'main' } }]));
   assert.ok(s.stats().series <= 20000);
+  const lru = createOtelStore(); lru.ingest(exportOf([{ metric: COST, v: 1, sid: 'keepme01-x', attrs: { query_source: 'main' } }]));
+  for (let i = 0; i < 19999; i++) lru.ingest(exportOf([{ metric: COST, v: 0.001, sid: 'f' + i, attrs: { query_source: 'main' } }]));
+  lru.ingest(exportOf([{ metric: COST, v: 1, sid: 'keepme01-x', attrs: { query_source: 'main' } }])); // still active: moves to the back
+  for (let i = 0; i < 100; i++) lru.ingest(exportOf([{ metric: COST, v: 0.001, sid: 'g' + i, attrs: { query_source: 'main' } }]));
+  assert.equal(lru.summary(['keepme01-x']).total_usd, 2, 'an active series is not evicted, only the idle ones');
+});
+
+test('partial coverage: a second live session without telemetry makes cost.exact incomplete (the headline keeps the estimate)', async () => {
+  fs.appendFileSync(path.join(TMP, 'live', 'hook-events.ndjson'), hookEv({ ts: new Date().toISOString(), ev: 'SessionStart', sid: 'nootel01', cwd: 'proj', cwdp: '/x/proj' }));
+  await sleep(1100);
+  const ex = (await M.get('/api/state')).json.cost.exact;
+  assert.equal(ex.live_sessions, 2); assert.equal(ex.sessions, 1); assert.equal(ex.complete, false);
 });

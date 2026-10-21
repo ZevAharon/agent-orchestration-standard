@@ -53,11 +53,12 @@ export function createOtelStore({ now = () => Date.now() } = {}) {
             const key = [m.name, sid, source, agent || '', model || '', type || '', a.effort || '', a.speed || '', a['skill.name'] || '', a['mcp_server.name'] || '', a['mcp_tool.name'] || '',
               temporality === CUMULATIVE ? 'c' + String(p.startTimeUnixNano || '') : 'd'].join('\u0000');
             let s = series.get(key);
-            if (!s) {
-              if (series.size >= SERIES_MAX) series.delete(series.keys().next().value); // oldest first
+            if (s) series.delete(key); // re-inserted below: Map order = least recently updated first
+            else {
+              if (series.size >= SERIES_MAX) series.delete(series.keys().next().value); // evict the series idle longest
               s = { sid, metric: m.name, source, agent, type, value: 0, last: 0 };
-              series.set(key, s);
             }
+            series.set(key, s);
             if (temporality === CUMULATIVE) s.value = v; else s.value += v;
             s.last = now(); points++;
           }

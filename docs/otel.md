@@ -37,6 +37,11 @@ to that collector instead and add an extra OTLP/http exporter there that forward
   The live agent view still comes from hooks.
 - Subagent cost is reported by type, not per subagent run, so two Explore subagents in one session share one figure.
 - Sessions are matched on the first 8 characters of the session id (what the hook log keeps).
+- If only some sessions in view send telemetry, the headline keeps the estimate and the popover shows the exact figure as partial
+  (`cost.exact.complete` is false).
+- With the default delta temporality, an export the exporter retries after a lost response is counted twice. Set
+  `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` to avoid that.
+- Compressed exports are refused: leave `OTEL_EXPORTER_OTLP_COMPRESSION` unset.
 - Figures live in memory and reset when the monitor restarts.
 
 ## Privacy and security
@@ -46,4 +51,6 @@ to that collector instead and add an extra OTLP/http exporter there that forward
 - Claude Code's export includes identity fields (`user.email`, `user.account_uuid`, `organization.id` and others). The monitor
   keeps only the cost and token values with `session.id`, `query_source`, `agent.name`, `model`, `type` and a few labels needed
   to keep series apart. It drops everything else, writes nothing to disk, and never returns identity fields from its API.
-- Bounded: 1 MB per request, 20,000 series, short labels only.
+- Bounded: 1 MB per request, 20,000 series (the one idle longest is dropped first), short labels only.
+- Any process on this machine can post to a localhost port, so another local program could send made-up figures. Treat the
+  exact cost as Claude Code's own report on a machine you trust, not as a billing record.
