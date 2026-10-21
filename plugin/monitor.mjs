@@ -289,6 +289,9 @@ function finalNames(visible, rank) {
 //                             dropped: n}; GoalDetail adds layers[{layer, sha12}], loosening_ids[{rule_id, layer}] and dropped_ids[{rule_id, layer, reason}] (ids only: no rule
 //                             values and no paths; the 32-hex content binding of an id is shortened to 8 characters for display)
 //   GoalDetail.criteria[].verify/.needs_confirmation   present only on a human-review criterion: verify 'human', needs_confirmation = not yet met
+//   .integrity                (summary) {status clean|warning|failed, failed_attempts, warning_attempts, kinds{kind:n}, checked}: worst attempt_log[].anticheat status (+ protected_result / acceptance_result failures); old goals -> clean, checked false
+//   GoalDetail.protected_tests {ok,files,not_executed,kind,output}|null from orch.protected_result; .review {tier,text,error}|null from orch.review (advisory); .claude_version_start
+//   GoalDetail.tasks[].attempt_log[{n,tier,outcome,integrity{status,reasons[]}|null,self_checks,claude_version,version_mismatch,stderr_tail}] (newest 10), .integrity (worst of attempts), .self_checks (sum), .version_mismatch
 //   .last_events              the 25 newest lines of events.ndjson, oldest first (same order as state.events): {type, ts, task_id, text}
 // Replay (?at=): goals are NOT time-sliced; replayed /api/state omits the `goals` key. Agent tags and goal-based project grouping
 // still come from the (time-sliced) events.
@@ -334,7 +337,7 @@ function tailEvents(file, st, n) {
     return out.reverse();
   } catch { return []; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
 }
-const EVENT_KEYS = ['reason', 'error', 'msg', 'title', 'status', 'plan_state', 'tier', 'attempt', 'outcome', 'rule', 'label', 'tool', 'exit_code', 'kind', 'cause', 'ok'];
+const EVENT_KEYS = ['reason', 'error', 'msg', 'title', 'status', 'plan_state', 'tier', 'attempt', 'outcome', 'rule', 'label', 'tool', 'exit_code', 'kind', 'cause', 'ok', 'run'];
 function eventView(e) {
   const d = objOr(e.data), parts = [];
   for (const k of EVENT_KEYS) { const v = d[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') parts.push((k === 'reason' || k === 'error' || k === 'msg' || k === 'title' ? '' : k + '=') + scrub(v, 100)); if (parts.length >= 4) break; }
@@ -380,6 +383,53 @@ function goalOutcome(g, e, now) {
 // engine records a scope violation as attempt_log outcome 'scope_violation' (changed files outside path_scope; the attempt fails and is escalated)
 const scopeViolations = (t) => (Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : []).filter((a) => a && typeof a === 'object' && a.outcome === 'scope_violation').length;
 const isRerun = (t) => { const log = Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log : [], l = log[log.length - 1]; return !TERMINAL_TASK.has(t.status) && !!l && typeof l === 'object' && l.outcome === 'rate_limited'; };
+// ---- anti-cheat / integrity (additive, optional; old goals without these fields render as null/empty) ----
+// attempt_log[].anticheat {status pass|warn|fail, failed, findings[{kind,severity}]} -> integrity clean|warning|failed + reason kinds; attempt outcome
+// 'worktree_mutated_during_checks' counts as failed; attempt_log[].self_checks.runs -> self_checks; attempt_log[].claude_version vs goal.orch.claude_version_start;
+// attempt_log[].stderr_tail (scrubbed per line, newest 20 lines); goal.orch.protected_result {ok,files,not_executed,kind}; goal.orch.review {tier,text,error}
+const INTEG = { pass: 'clean', warn: 'warning', fail: 'failed' }, INTEG_RANK = { clean: 0, warning: 1, failed: 2 };
+const KIND_RE = /^[a-z_]{1,40}$/;
+const logOf = (t) => (Array.isArray(objOr(t.orch).attempt_log) ? t.orch.attempt_log.filter((a) => a && typeof a === 'object') : []);
+function attemptIntegrity(a) {
+  const ac = objOr(a.anticheat), reasons = [];
+  let st = INTEG[ac.status] || null;
+  if (typeof ac.failed === 'string' && KIND_RE.test(ac.failed)) reasons.push(ac.failed);
+  for (const f of (Array.isArray(ac.findings) ? ac.findings : []).slice(0, 20)) { const k = objOr(f).kind; if (typeof k === 'string' && KIND_RE.test(k) && !reasons.includes(k)) reasons.push(k); }
+  if (a.outcome === 'worktree_mutated_during_checks') { st = 'failed'; if (!reasons.includes(a.outcome)) reasons.push(a.outcome); }
+  return st ? { status: st, reasons: reasons.slice(0, 8) } : null;
+}
+const tailText = (s) => (typeof s === 'string' ? s.split('\n').slice(-20).map((l) => scrub(l, 200)).join('\n').slice(-1500).trim() : '');
+function attemptView(a, start) {
+  const sc = objOr(a.self_checks), v = typeof a.claude_version === 'string' ? ctl(a.claude_version, 40) : null, tail = tailText(a.stderr_tail);
+  return { n: nn(a.n), tier: a.tier ? ctl(a.tier, 20) : null, outcome: a.outcome ? ctl(a.outcome, 40) : null, integrity: attemptIntegrity(a),
+    self_checks: Number.isFinite(sc.runs) ? nn(sc.runs) : null, claude_version: v, version_mismatch: !!(v && start && v !== start), stderr_tail: tail || null };
+}
+function taskIntegrity(log) {
+  let st = null; const kinds = [];
+  for (const a of log) { const i = attemptIntegrity(a); if (!i) continue; if (st === null || INTEG_RANK[i.status] > INTEG_RANK[st]) st = i.status; for (const k of i.reasons) if (!kinds.includes(k)) kinds.push(k); }
+  return st ? { status: st, reasons: kinds.slice(0, 8) } : null;
+}
+function integrityOf(tasks, o) {
+  const kinds = {}; let status = 'clean', warnings = 0, failed = 0, seen = 0;
+  for (const t of tasks) for (const a of logOf(t)) {
+    const i = attemptIntegrity(a); if (!i) continue; seen++;
+    if (i.status === 'failed') failed++; else if (i.status === 'warning') warnings++;
+    if (INTEG_RANK[i.status] > INTEG_RANK[status]) status = i.status;
+    if (i.status !== 'clean') for (const k of i.reasons) kinds[k] = (kinds[k] || 0) + 1;
+  }
+  const pr = objOr(o.protected_result), ar = objOr(objOr(o.anticheat).acceptance_result);
+  if (pr.ok === false || ar.ok === false) { status = 'failed'; const k = typeof pr.kind === 'string' && KIND_RE.test(pr.kind) ? pr.kind : pr.ok === false ? 'protected_tests_failed' : 'acceptance_failed'; kinds[k] = (kinds[k] || 0) + 1; }
+  return { status, failed_attempts: failed, warning_attempts: warnings, kinds, checked: seen > 0 || typeof pr.ok === 'boolean' };
+}
+function protectedView(o) {
+  const r = objOr(o.protected_result); if (typeof r.ok !== 'boolean') return null;
+  return { ok: r.ok, files: nn(r.files), not_executed: Array.isArray(r.not_executed) ? r.not_executed.length : 0, kind: typeof r.kind === 'string' && KIND_RE.test(r.kind) ? r.kind : null, output: r.ok ? null : (tailText(r.output) || null) };
+}
+function reviewView(o) {
+  if (!o.review || typeof o.review !== 'object' || Array.isArray(o.review)) return null;
+  const r = o.review;
+  return { tier: r.tier ? ctl(r.tier, 20) : null, text: tailText(r.text) || null, error: r.error ? scrub(r.error, 200) : null };
+}
 const RULE_ID_RE = /@([0-9a-f]{8})[0-9a-f]{24}\b/g;
 const ruleId = (v) => ctl(v, 160).replace(RULE_ID_RE, '@$1');
 function rulesView(o, detail) {
@@ -408,7 +458,7 @@ function summaryOf(id, e, now) {
       max_parallel: nn(B.max_parallel), running: T.filter((t) => t.status === 'running').length, max_attempts: nn(B.max_attempts) },
     tasks_total: T.length, tasks_done: T.filter((t) => t.status === 'done').length, tasks_failed: T.filter((t) => t.status === 'failed').length,
     approvals_pending: e.pending.length, blocked_reason: g.blocked_reason ? scrub(g.blocked_reason, 200) : null,
-    outcome: goalOutcome(g, e, now), rules: rulesView(o, false),
+    outcome: goalOutcome(g, e, now), rules: rulesView(o, false), integrity: integrityOf(T, o),
   };
 }
 function taskView(t, e, now) {
@@ -420,7 +470,7 @@ function taskView(t, e, now) {
   const outcome = t.status === 'done' ? (tierPath.length > 1 ? 'escalated' : retries > 0 ? 'retried' : 'achieved') : t.status === 'failed' ? 'failed' : t.status === 'cancelled' ? 'discarded'
     : t.status === 'needs_review' || mine.length ? 'waiting' : t.status === 'running' || t.status === 'ready' ? 'in_progress' : 'pending';
   const check = o.phase === 'checking' ? 'checking' : last && last.checks_ok === true ? 'checks passed' : last && last.checks_ok === false ? 'checks failed' : t.status === 'done' ? 'checks passed' : null;
-  const lf = objOr(o.last_failure);
+  const lf = objOr(o.last_failure), start = typeof objOr(e.goal.orch).claude_version_start === 'string' ? ctl(e.goal.orch.claude_version_start, 40) : null;
   return { id: t.id, title: ctl(t.title, 120), status: ctl(t.status, 20), phase: o.phase ? ctl(o.phase, 20) : null, tier: o.model_tier ? ctl(o.model_tier, 20) : null,
     depends_on: (Array.isArray(t.depends_on) ? t.depends_on : []).filter((d) => typeof d === 'string' && TAG_RE.test(d)).slice(0, 50),
     attempts: nn(t.attempts), max_attempts: nn(t.max_attempts), branch: typeof o.branch === 'string' ? ctl(o.branch, 100) : null, ran_s: Math.round(ran / 1000),
@@ -428,6 +478,8 @@ function taskView(t, e, now) {
     outcome, rerun: isRerun(t), out_of_scope: scopeViolations(t) > 0, scope_violations: scopeViolations(t), retries, tier_path: tierPath, cost_usd: Math.round(log.reduce((x, a) => x + nn(a.notional_usd), 0) * 1e4) / 1e4,
     waiting_s: mine.length ? Math.max(0, Math.round((now - Math.min(...mine)) / 1000)) : null,
     waiting_for_human: t.status === 'needs_review' || mine.length > 0 || e.pending.some((p) => p.task_id === t.id),
+    attempt_log: log.slice(-10).map((a) => attemptView(a, start)), integrity: taskIntegrity(log), self_checks: log.reduce((x, a) => x + (Number.isFinite(objOr(a.self_checks).runs) ? nn(a.self_checks.runs) : 0), 0),
+    version_mismatch: log.some((a) => typeof a.claude_version === 'string' && !!start && a.claude_version !== start),
     ...(t.status !== 'done' && lf.kind ? { error: scrub(`${lf.kind}${lf.note ? ': ' + lf.note : ''}`, 160) } : {}) };
 }
 // refreshes the cached view (at most one directory scan per second)
@@ -469,7 +521,8 @@ function goalDetail(id) {
   const v = goalsIndex(), e = GID_RE.test(id) ? v.byId.get(id) : null;
   if (!e) return null;
   const now = Date.now();
-  return { ...summaryOf(id, e, now), rules: rulesView(objOr(e.goal.orch), true), description: ctl(e.goal.description, 500),
+  return { ...summaryOf(id, e, now), rules: rulesView(objOr(e.goal.orch), true), protected_tests: protectedView(objOr(e.goal.orch)), review: reviewView(objOr(e.goal.orch)),
+    claude_version_start: typeof objOr(e.goal.orch).claude_version_start === 'string' ? ctl(e.goal.orch.claude_version_start, 40) : null, description: ctl(e.goal.description, 500),
     criteria: (Array.isArray(e.goal.success_criteria) ? e.goal.success_criteria : []).slice(0, 50).filter((c) => c && typeof c === 'object').map((c, i) => ({ id: ctl(c.id ?? 'c' + (i + 1), 40), text: ctl(c.text, 200), met: c.met === true, ...(c.verify === 'human' ? { verify: 'human', needs_confirmation: c.met !== true } : {}) })),
     tasks: e.tasks.map((t) => taskView(t, e, now)), last_events: e.events.slice(-DETAIL_EVENTS) };
 }

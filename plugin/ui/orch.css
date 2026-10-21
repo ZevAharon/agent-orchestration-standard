@@ -145,3 +145,16 @@ fieldset.orch-field{border:0;padding:0;margin:0;min-width:0}
 .orch-critwrap{margin-bottom:6px}.orch-critwrap .orch-critrow{margin-bottom:2px}
 .orch-critmeta{font:11px var(--mono);color:var(--text-2);overflow-wrap:anywhere}.orch-critmeta[data-crit-meta=human]{color:var(--stalled)}
 .orch-draft{border:1px dashed var(--line-2);padding:8px;border-radius:6px}.orch-draftq{margin:2px 0 6px;padding-left:18px;font-size:12px;color:var(--text-2)}
+
+/* integrity (anti-cheat) badges: read-only */
+.orch-integ{font:700 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:2px 5px;border-radius:2px;border:1px solid var(--line-2);color:var(--text-2)}
+.orch-integ-warning{color:var(--stalled);border-color:rgb(var(--stalled-rgb)/.6)}
+.orch-integ-failed{color:var(--errored);border-color:rgb(var(--errored-rgb)/.7)}
+.orch-tr3,.orch-integrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+.orch-reason{font:600 10px/1 var(--mono);letter-spacing:.04em;color:var(--text-2);border:1px dashed var(--line-2);padding:2px 5px;border-radius:2px}
+.orch-selfchk{font:500 10.5px/1 var(--mono);color:var(--text-2)}
+.orch-vwarn{font:700 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--stalled);border:1px solid rgb(var(--stalled-rgb)/.6);padding:2px 5px;border-radius:2px}
+.orch-fold{margin-top:4px;font:500 11px/1.4 var(--mono);color:var(--text-2)}
+.orch-fold summary{cursor:pointer}
+.orch-pre{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:12em;overflow:auto;font:inherit}
+.orch-werr .orch-pre{color:rgb(var(--errored-rgb))}

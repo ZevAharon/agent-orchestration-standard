@@ -12,6 +12,7 @@ Each `<name>/goals/<gid>/` is a real orchestrator goal dir (only the files the m
 | `scope` | `g-scope` | `escalation` whose first attempt has `outcome: scope_violation` (changed files outside `path_scope`) |
 | `plan` | `g-plan` | `escalation` as a draft awaiting plan approval (`plan_awaiting_since_ms: 0`; the test rewrites it) |
 | `rules` | `g-rules` | `escalation` with a rule-set summary in `goal.orch.rules` (1 loosening, 1 dropped repo loosening), a `verify: human` criterion `c2` and `data.rule` on `task.retried` (hand-derived) |
+| `integrity` | `g-integ` | `escalation` hand-extended with anti-cheat data (contract section "Anti-cheat fields"): attempt 1 `tests_weakened` (fail) + `vacuous_pass` warn, 2 self-checks, a hostile `stderr_tail`; attempt 2 `literal_copy` warn on a different `claude_version`; `protected_result` ok, advisory `review`, `orch.check.self_run` events (hand-derived, not generated) |
 
 Regenerate (only while `./orchestrator` exists; uses the fake claude, never a real one):
 

@@ -285,7 +285,7 @@
     R.vList = el('div', 'orch-view'); R.vDetail = el('div', 'orch-view'); R.vForm = el('div', 'orch-view');
     R.body.appendChild(R.vList); R.body.appendChild(R.vDetail); R.body.appendChild(R.vForm);
     R.sNew = sect(R.vList, 'new'); R.sInbox = sect(R.vList, 'inbox'); R.sList = sect(R.vList, 'list');
-    var names = ['head', 'ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'dag', 'tasks', 'events'];
+    var names = ['head', 'ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'integ', 'dag', 'tasks', 'events'];
     R.d = {}; names.forEach(function (n) { R.d[n] = sect(R.vDetail, n); });
     buildForm();
 
@@ -462,6 +462,19 @@
     c.title = 'Rule set ' + clip(r.hash, 12) + (r.legacy ? ' (legacy goal)' : '') + (dr ? '; ' + dr + ' repo loosening' + (dr === 1 ? '' : 's') + ' not applied' : '');
     return c;
   }
+  /* integrity (anti-cheat) badges, read-only. Data: GoalSummary.integrity {status,failed_attempts,warning_attempts,kinds}, tasks[].integrity {status,reasons[]},
+     tasks[].attempt_log[]. Everything is set with textContent; unknown/missing fields render nothing (old goals). */
+  var INTEG_OK = { clean: 1, warning: 1, failed: 1 };
+  function integChip(st, label) {
+    st = INTEG_OK[st] ? st : 'clean';
+    var c = el('span', 'orch-integ orch-integ-' + st, label || ('integrity: ' + st)); c.setAttribute('data-integrity', st); return c;
+  }
+  function reasonChips(parent, reasons) {
+    arr(reasons).slice(0, 8).forEach(function (k) { var c = el('span', 'orch-reason', clip(String(k).replace(/_/g, ' '), 40)); c.setAttribute('data-reason', String(clip(k, 40))); parent.appendChild(c); });
+  }
+  function textDetails(label, text, cls) {
+    var d = el('details', 'orch-fold ' + (cls || '')); d.appendChild(el('summary', null, label)); d.appendChild(el('pre', 'orch-pre', clip(text, 2000))); return d;
+  }
   function goalRow(g) {
     var li = el('li'); var b = el('button', 'orch-goal'); b.type = 'button'; b.setAttribute('data-id', String(g.id));
     b.setAttribute('aria-label', 'Open goal: ' + clip(g.title, 120) + ', ' + (G_ST[g.status] ? g.status : 'unknown'));
@@ -472,6 +485,7 @@
     var r2 = el('span', 'orch-r2');
     if (g.repo_name) r2.appendChild(el('span', 'orch-repo', clip(g.repo_name, 80)));
     if (isObj(g.rules)) r2.appendChild(rulesChip(g.rules));
+    if (isObj(g.integrity) && g.integrity.checked && g.integrity.status !== 'clean') r2.appendChild(integChip(g.integrity.status));
     var td = num(g.tasks_done), tt = num(g.tasks_total);
     var pr = el('span', 'orch-prog tnum', td + '/' + tt + ' tasks'); pr.setAttribute('data-prog', td + '/' + tt); r2.appendChild(pr);
     if (num(g.tasks_failed) > 0) r2.appendChild(el('span', 'orch-failed tnum', g.tasks_failed + ' failed'));
@@ -545,7 +559,7 @@
     if (!g) {
       var msg = detailErr || (detailLoading ? 'Loading goal…' : 'Goal not found.');
       paint(D.head, 'nf|' + msg, function (s) { s.appendChild(el('p', 'orch-empty', msg)); });
-      ['ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'dag', 'tasks', 'events'].forEach(function (k) { paint(D[k], 'none', function () {}); });
+      ['ctl', 'plan', 'appr', 'crit', 'rules', 'budget', 'integ', 'dag', 'tasks', 'events'].forEach(function (k) { paint(D[k], 'none', function () {}); });
       return;
     }
     var d = detail && detail.id === g.id ? detail : null;
@@ -608,6 +622,22 @@
     paint(D.budget, JSON.stringify([g.budget, g.outcome]), function (s) {
       label(s, 'Budget'); budgetMeters(s, g.budget); outcomeLine(s, g.outcome);
       var b = g.budget || {}; if (b.max_attempts != null) s.appendChild(el('p', 'orch-muted tnum', 'max attempts per task: ' + num(b.max_attempts)));
+    });
+    paint(D.integ, JSON.stringify([g.integrity, d && d.protected_tests, d && d.review, d && d.claude_version_start]), function (s) {
+      var I = g.integrity; if (!isObj(I) || !d) return;
+      label(s, 'Integrity');
+      var row = el('p', 'orch-integrow'); row.appendChild(integChip(I.status));
+      var kinds = isObj(I.kinds) ? Object.keys(I.kinds).slice(0, 8) : []; reasonChips(row, kinds); s.appendChild(row);
+      if (!I.checked) s.appendChild(el('p', 'orch-muted', 'No anti-cheat data recorded for this goal.'));
+      var pt = d.protected_tests;
+      if (isObj(pt)) {
+        var pl = el('p', 'orch-muted tnum orch-prot', 'protected tests: ' + (pt.ok ? 'passed' : 'FAILED') + ' (' + num(pt.files) + ' file' + (num(pt.files) === 1 ? '' : 's') + (num(pt.not_executed) ? ', ' + num(pt.not_executed) + ' not executed' : '') + ')');
+        pl.setAttribute('data-protected', pt.ok ? 'ok' : 'failed'); s.appendChild(pl);
+        if (!pt.ok && pt.output) s.appendChild(textDetails('protected test output', pt.output, 'orch-err'));
+      }
+      if (d.claude_version_start) s.appendChild(el('p', 'orch-muted tnum', 'claude ' + clip(d.claude_version_start, 40)));
+      var rv = d.review;
+      if (isObj(rv)) s.appendChild(textDetails('Reviewer notes (advisory, model-written, not verified)' + (rv.tier ? ' \u00b7 ' + clip(rv.tier, 20) : ''), rv.error ? 'The advisory review did not complete: ' + rv.error : (rv.text || '(empty)'), 'orch-review'));
     });
     var tasks = arr(d && d.tasks).filter(isObj);
     paint(D.dag, JSON.stringify(tasks.map(function (t) { return [t.id, t.status, t.tier, t.depends_on, t.attempts, t.max_attempts, t.title]; })), function (s) {
@@ -672,9 +702,20 @@
     if (t.out_of_scope) { var os = el('span', 'orch-oos', 'out of scope' + (num(t.scope_violations) > 1 ? ' \u00d7' + t.scope_violations : '')); os.title = 'An attempt changed files outside this task\'s path_scope and was rejected'; r2.appendChild(os); }
     if (t.waiting_for_human) { var w = el('span', 'orch-wait', 'waiting for you' + (t.waiting_s != null ? ' ' + fmtDur(t.waiting_s) : '')); r2.appendChild(w); }
     li.appendChild(r2);
+    var ti = isObj(t.integrity) ? t.integrity : null, sc = num(t.self_checks);
+    if (ti || sc > 0 || t.version_mismatch) {
+      var r3 = el('div', 'orch-tr3');
+      if (ti) { r3.appendChild(integChip(ti.status)); if (ti.status !== 'clean') reasonChips(r3, ti.reasons); }
+      if (sc > 0) r3.appendChild(el('span', 'orch-selfchk tnum', sc + (sc === 1 ? ' self-check' : ' self-checks')));
+      if (t.version_mismatch) { var vm = el('span', 'orch-vwarn', 'claude version changed'); vm.title = 'An attempt ran on a different claude CLI version than the goal started with'; r3.appendChild(vm); }
+      li.appendChild(r3);
+    }
     var ow = outcomeWord(t); if (ow) li.appendChild(el('div', 'orch-out orch-out-' + clip(t.outcome, 20), ow));
     if (t.check_summary) li.appendChild(el('div', 'orch-chk', clip(t.check_summary, 800)));
     if (t.error) li.appendChild(el('div', 'orch-err', clip(t.error, 800)));
+    arr(t.attempt_log).filter(isObj).forEach(function (a) {
+      if (a.stderr_tail) li.appendChild(textDetails('worker error, attempt ' + num(a.n) + (a.tier ? ' (' + tierWord(a.tier) + ')' : ''), a.stderr_tail, 'orch-werr'));
+    });
     return li;
   }
   function tierWord(t) { return t === 'haiku' || t === 'sonnet' || t === 'opus' ? t : '?'; }
