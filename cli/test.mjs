@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { render, renderModel, cleanup, _resetCleanup, detectColor, handleKey, initialUi, fmtDur } from './dash.mjs';
+import { render, renderModel, cleanup, _resetCleanup, detectColor, handleKey, initialUi, fmtDur, snapshotJson } from './dash.mjs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -139,6 +139,31 @@ assert.notEqual(render(fixture(5), 100, 30, { frame: 0 }), render(fixture(5), 10
 const script = fileURLToPath(new URL('./dash.mjs', import.meta.url));
 const res = spawnSync(process.execPath, [script, '--once', '--port', '9'], { env: { ...process.env, NO_COLOR: '1', COLORTERM: 'truecolor' }, encoding: 'utf8' });
 assert.equal(res.status, 0); assert.ok(!/\x1b/.test(res.stdout)); assert.ok(res.stdout.includes('monitor not reachable'));
+
+// ---- --json snapshot
+{
+  const st = { agents: [
+    { id: 'a1', role: 'orchestrator', status: 'running', model_label: 'Sonnet 5.5', usage: { input: 10, output: 500, cache_read: 1e6, cache_write: 4000 }, current_tool: { name: 'Bash' } },
+    { id: 'a2', role: 'general-purpose', status: 'idle', model_label: 'Haiku 5.5', usage: { input: 5, output: 90, cache_read: 5000, cache_write: 700 }, current_tool: null },
+  ] };
+  const snap = snapshotJson(st);
+  assert.equal(snap.agents.length, 2);
+  for (const a of snap.agents) assert.deepEqual(Object.keys(a).sort(), ['id', 'model_label', 'role', 'status']);
+  assert.ok(!('tasks' in snap), 'no tasks key without tasks');
+  assert.equal(snap.totals.agents, 2);
+  assert.equal(snap.totals.tokens_total, (10 + 500 + 4000) + (5 + 90 + 700), 'input+output+cache_write, no cache_read');
+  const withTasks = snapshotJson({ agents: [], tasks: [{ id: 't1', title: 'x' }] });
+  assert.deepEqual(withTasks.tasks, [{ id: 't1', title: 'x' }]);
+  assert.ok(!('tasks' in snapshotJson({ agents: [], tasks: [] })), 'empty tasks omitted');
+  const empty = { agents: [], totals: { agents: 0, tokens_total: 0 } };
+  assert.deepEqual(snapshotJson(null), empty);
+  assert.deepEqual(snapshotJson(undefined), empty);
+  const frozen = JSON.parse(JSON.stringify({ ...st, tasks: [{ id: 't1' }] }));
+  snapshotJson(frozen);
+  assert.deepEqual(frozen, JSON.parse(JSON.stringify({ ...st, tasks: [{ id: 't1' }] })), 'input not mutated');
+  const jr = spawnSync(process.execPath, [fileURLToPath(new URL('./dash.mjs', import.meta.url)), '--json', '--port', '9'], { encoding: 'utf8' });
+  assert.equal(jr.stdout.trim(), '{"error":"monitor unreachable"}'); assert.equal(jr.status, 1);
+}
 
 // ---- run time (ran_s / tok_per_min): formatting, list columns, ring labels, zero overlap with them present
 assert.equal(fmtDur(45), '45s'); assert.equal(fmtDur(0), '0s'); assert.equal(fmtDur(720), '12m'); assert.equal(fmtDur(3900), '1h 05m');

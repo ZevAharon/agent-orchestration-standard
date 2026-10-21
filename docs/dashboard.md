@@ -7,7 +7,7 @@ This repo contains a read-only **live monitor for Claude Code sessions**: it sho
 | Hooks | `hooks/aos-hook.mjs`, `plugin/hooks/hooks.json` | Claude Code hooks write sanitized one-line events |
 | Monitor | `monitor.mjs` | Folds events into `/api/state`, `/api/history`, replay (`?at=`), alerts, notifications |
 | Web UI | `ui/` | The graph, drawers, replay, cost readout, light/dark toggle |
-| Terminal UI | `cli/dash.mjs` (`aos-dash`) | The same graph in the terminal (`--once` for a snapshot) |
+| Terminal UI | `cli/dash.mjs` (`aos-dash`) | The same graph in the terminal (`--once` for a snapshot; `--json` for a JSON snapshot `{agents, tasks?, totals}`, or `{"error":"monitor unreachable"}` with exit 1 when the monitor is down) |
 | MCP server | `plugin/mcp/server.mjs` | Read-only tools so Claude can query the monitor |
 | Notifier | `plugin/notify/` | Branded macOS notifications with an app icon |
 | Plugin | `plugin/`, `.claude-plugin/marketplace.json` | Packages all of the above; `node plugin/build.mjs` regenerates the copies |

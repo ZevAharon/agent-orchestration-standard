@@ -70,6 +70,13 @@ export function costTotals(state) {
   else for (const a of (state && state.agents) || []) { nw += newTok(a.usage); cr += (a.usage && a.usage.cache_read) || 0; }
   return { nw, cr };
 }
+export function snapshotJson(state) {
+  const agents = ((state && state.agents) || []).map((a) => ({ id: a.id, role: a.role, status: a.status, model_label: a.model_label }));
+  const out = { agents };
+  if (state && Array.isArray(state.tasks) && state.tasks.length) out.tasks = state.tasks;
+  out.totals = { agents: agents.length, tokens_total: costTotals(state).nw };
+  return out;
+}
 function wrapName(name, max) {
   if (len(name) <= max) return [name];
   const words = name.split(/\s+/); let l1 = '', i = 0;
@@ -731,10 +738,10 @@ async function fetchState(port) {
 }
 
 function parseArgs(argv) {
-  const o = { once: false, list: false, port: Number(process.env.AOS_PORT) || 4318, size: null, help: false };
+  const o = { once: false, list: false, port: Number(process.env.AOS_PORT) || 4318, size: null, help: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--once') o.once = true; else if (a === '--list') o.list = true;
+    if (a === '--once') o.once = true; else if (a === '--list') o.list = true; else if (a === '--json') o.json = true;
     else if (a === '--port') o.port = Number(argv[++i]); else if (a.startsWith('--port=')) o.port = Number(a.slice(7));
     else if (a === '--machine') o.machine = argv[++i]; else if (a.startsWith('--machine=')) o.machine = a.slice(10);
     else if (a === '--size') o.size = argv[++i]; else if (a === '--help' || a === '-h') o.help = true;
@@ -746,9 +753,15 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2); const o = parseArgs(argv);
-  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
+  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--json] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--json prints {agents:[{id,role,status,model_label}],tasks?,totals:{agents,tokens_total}} for all machines and exits; prints {"error":"monitor unreachable"} and exits 1 if the monitor is unreachable\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
   const out = process.stdout; const color = detectColor(process.env, out, argv);
   const target = `127.0.0.1:${o.port}`;
+  if (o.json) {
+    let st;
+    try { st = await fetchState(o.port); } catch { process.stdout.write(JSON.stringify({ error: 'monitor unreachable' }) + '\n'); process.exitCode = 1; return; }
+    process.stdout.write(JSON.stringify(snapshotJson(st)) + '\n');
+    return;
+  }
   if (o.once || !out.isTTY) {
     let cols = out.columns || Number(process.env.COLUMNS) || 140, rows = out.rows || Number(process.env.LINES) || 40;
     const m = o.size && /^(\d+)x(\d+)$/.exec(o.size); if (m) { cols = +m[1]; rows = +m[2]; }
