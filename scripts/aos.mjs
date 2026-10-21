@@ -49,7 +49,8 @@ async function doctor() {
   if (!onPath) warn('aos-dash not on PATH (make link)');
   else {
     const found = onPath.trim(); let real = found; try { real = fs.realpathSync(found); } catch {}
-    const mine = path.join(REPO, 'plugin', 'bin') + path.sep;
+    let repoReal = REPO; try { repoReal = fs.realpathSync(REPO); } catch {}
+    const mine = path.join(repoReal, 'plugin', 'bin') + path.sep;
     real.startsWith(mine) ? ok(`aos-dash on PATH (${found})`) : warn(`aos-dash on PATH is a different install: ${found} -> ${real} (not in this checkout ${REPO}; run: make link)`);
   }
   settings && settings.statusLine && String(settings.statusLine.command || '').includes('aos-statusline') ? ok('status line configured') : warn('status line not configured (optional: make statusline)');
