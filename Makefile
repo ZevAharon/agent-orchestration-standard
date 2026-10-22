@@ -2,6 +2,22 @@
 # Requires: Node 18+, the Claude Code CLI (`claude`), macOS for the branded notifier (everything else is portable).
 
 SHELL      := /bin/bash
+# make from cmd or PowerShell (Windows outside Git Bash, where MSYSTEM is unset): /bin/bash does not exist there, so make
+# would fall back to cmd.exe and every recipe would fail ('PORT' is not recognized...). Locate Git for Windows through
+# `git` (on the PATH of any shell that can run it), run the recipes with its bash, put its usr/bin first so they find
+# curl, tail, awk, uname and start, and give make the HOME that bash and node agree on (PowerShell does not export one).
+ifeq ($(OS),Windows_NT)
+ifeq ($(MSYSTEM),)
+GIT_ROOT   := $(strip $(subst /mingw32/libexec/git-core,,$(subst /mingw64/libexec/git-core,,$(shell git --exec-path))))
+ifeq ($(GIT_ROOT),)
+$(error git not found on PATH: make needs Git for Windows (its bash runs the recipes). Install it or run make from Git Bash)
+endif
+SHELL      := $(GIT_ROOT)/usr/bin/bash.exe
+export PATH := $(GIT_ROOT)/usr/bin;$(PATH)
+HOME       ?= $(USERPROFILE)
+export HOME
+endif
+endif
 REPO       := $(CURDIR)
 PLUGIN     := aos-dashboard@aos-local
 MARKET     := aos-local
@@ -34,7 +50,10 @@ install: check build validate ## Install everything: build, register + install t
 	@echo "Troubleshooting: aos-dash not found -> add this to your shell profile: export PATH=\"\$$HOME/.local/bin:\$$PATH\"; empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
 	@echo "NOTE: if you previously added AOS hooks to ~/.claude/settings.json by hand, remove them (they would log every event twice)."
 
-uninstall: stop unlink statusline-off ## Remove the plugin, marketplace entry, aos-dash link and status line (your data stays)
+# `stop` fails when it cannot identify the listener on PORT (right for `restart`); here that is only a warning, the uninstall goes on.
+uninstall: ## Remove the plugin, marketplace entry, aos-dash link and status line (your data stays)
+	@PORT=$(PORT) $(AOS) stop || true
+	@$(MAKE) --no-print-directory unlink statusline-off
 	-@claude plugin uninstall $(PLUGIN) 2>&1 | tail -1
 	-@claude plugin marketplace remove $(MARKET) 2>&1 | tail -1
 	@echo "Removed. Activity history is kept in $(DATA) (delete it to erase)."
@@ -79,7 +98,7 @@ stop: ## Stop the live monitor on PORT (other AOS monitors are left alone)
 restart: stop start ## Restart the monitor (needed after `make build` changes monitor.mjs)
 
 open: ## Open the web dashboard
-	@open http://127.0.0.1:$(PORT) 2>/dev/null || xdg-open http://127.0.0.1:$(PORT)
+	@open http://127.0.0.1:$(PORT) 2>/dev/null || xdg-open http://127.0.0.1:$(PORT) 2>/dev/null || start http://127.0.0.1:$(PORT)
 
 link: ## Put `aos-dash` on your PATH (symlink in ~/.local/bin; launcher scripts on Windows)
 	@$(AOS) link
