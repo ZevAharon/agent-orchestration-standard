@@ -5,12 +5,15 @@ SHELL      := /bin/bash
 # make from cmd or PowerShell (Windows outside Git Bash, where MSYSTEM is unset): /bin/bash does not exist there, so make
 # would fall back to cmd.exe and every recipe would fail ('PORT' is not recognized...). Locate Git for Windows through
 # `git` (on the PATH of any shell that can run it), run the recipes with its bash, put its usr/bin first so they find
-# curl, tail, awk, uname and start, and give make the HOME that bash and node agree on (PowerShell does not export one).
+# tail, awk, uname and start (curl is Windows' own, in System32), and give make the HOME that bash and node agree on
+# (PowerShell does not export one). The exec path is <root>/<mingw64|mingw32|clangarm64>/libexec/git-core; any other
+# layout (not Git for Windows) leaves GIT_ROOT empty and stops with a message instead of running a SHELL that is not there.
 ifeq ($(OS),Windows_NT)
 ifeq ($(MSYSTEM),)
-GIT_ROOT   := $(strip $(subst /mingw32/libexec/git-core,,$(subst /mingw64/libexec/git-core,,$(shell git --exec-path))))
+GIT_EXEC   := $(shell git --exec-path)
+GIT_ROOT   := $(strip $(foreach d,mingw64 mingw32 clangarm64,$(if $(findstring /$(d)/libexec/git-core,$(GIT_EXEC)),$(subst /$(d)/libexec/git-core,,$(GIT_EXEC)))))
 ifeq ($(GIT_ROOT),)
-$(error git not found on PATH: make needs Git for Windows (its bash runs the recipes). Install it or run make from Git Bash)
+$(error git not found on PATH, or not Git for Windows ($(or $(GIT_EXEC),no git)): make needs Git for Windows (its bash runs the recipes). Install it or run make from Git Bash)
 endif
 SHELL      := $(GIT_ROOT)/usr/bin/bash.exe
 export PATH := $(GIT_ROOT)/usr/bin;$(PATH)
