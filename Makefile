@@ -28,6 +28,13 @@ PORT       ?= 4318
 DATA       := $(HOME)/.claude/plugins/data/aos-dashboard-aos-local
 AOS        := node scripts/aos.mjs
 ENSURE     := CLAUDE_PLUGIN_ROOT="$(REPO)/plugin" CLAUDE_PLUGIN_DATA="$(DATA)" AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
+# One browser opener per platform, so its own error shows if it fails. OS is Windows_NT in cmd, PowerShell and Git Bash
+# alike; elsewhere `open` is only right on macOS (on Debian/Ubuntu it is openvt). `=`, so uname runs only for `make open`.
+ifeq ($(OS),Windows_NT)
+OPEN       := start
+else
+OPEN        = $(if $(filter Darwin,$(shell uname -s)),open,xdg-open)
+endif
 
 .DEFAULT_GOAL := help
 .PHONY: help install uninstall build validate test doctor start stop restart open link unlink statusline statusline-off notifier screenshots
@@ -101,7 +108,7 @@ stop: ## Stop the live monitor on PORT (other AOS monitors are left alone)
 restart: stop start ## Restart the monitor (needed after `make build` changes monitor.mjs)
 
 open: ## Open the web dashboard
-	@open http://127.0.0.1:$(PORT) 2>/dev/null || xdg-open http://127.0.0.1:$(PORT) 2>/dev/null || start http://127.0.0.1:$(PORT)
+	@$(OPEN) http://127.0.0.1:$(PORT) || echo "Open http://127.0.0.1:$(PORT) in your browser"
 
 link: ## Put `aos-dash` on your PATH (symlink in ~/.local/bin; launcher scripts on Windows)
 	@$(AOS) link
