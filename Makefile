@@ -31,7 +31,7 @@ install: check build validate ## Install everything: build, register + install t
 	@echo "  2. Open http://127.0.0.1:$(PORT)   (or run: aos-dash)"
 	@echo "  3. Optional status line:  make statusline"
 	@echo "  4. Check everything:      make doctor"
-	@echo "Troubleshooting: aos-dash not found -> add this to your shell profile: export PATH=\"$$HOME/.local/bin:$$PATH\"; empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
+	@echo "Troubleshooting: aos-dash not found -> add this to your shell profile: export PATH=\"\$$HOME/.local/bin:\$$PATH\"; empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
 	@echo "NOTE: if you previously added AOS hooks to ~/.claude/settings.json by hand, remove them (they would log every event twice)."
 
 uninstall: stop unlink statusline-off ## Remove the plugin, marketplace entry, aos-dash link and status line (your data stays)
@@ -81,7 +81,7 @@ restart: stop start ## Restart the monitor (needed after `make build` changes mo
 open: ## Open the web dashboard
 	@open http://127.0.0.1:$(PORT) 2>/dev/null || xdg-open http://127.0.0.1:$(PORT)
 
-link: ## Put `aos-dash` on your PATH (symlink in ~/.local/bin)
+link: ## Put `aos-dash` on your PATH (symlink in ~/.local/bin; launcher scripts on Windows)
 	@$(AOS) link
 
 unlink: ## Remove the `aos-dash` link
