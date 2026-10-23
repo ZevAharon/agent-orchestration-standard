@@ -19,7 +19,7 @@ Looking for orchestration (planning goals, launching and managing workers)? That
 
 ## Install the dashboard
 
-Needs Node 18+ and the Claude Code CLI (`claude` on your PATH; the installer checks and stops with a message if not). No dependencies to install.
+Needs Node 18+ and the Claude Code CLI (`claude` on your PATH; the installer checks and stops with a message if not). No dependencies to install. On Windows it also needs the full Git for Windows (its bash runs the recipes; MinGit has none) and GNU make (`winget install ezwinports.make`); `make` then works the same from Git Bash, cmd and PowerShell (except `make test`: the test suites still need Linux or macOS).
 
 ```sh
 git clone https://github.com/tomtomsatnav/agent-orchestration-standard && cd agent-orchestration-standard
@@ -28,7 +28,7 @@ make doctor         # checks the whole setup and tells you what to fix
 make                # lists every target
 ```
 
-`make install` changes only: the Claude Code plugin (user scope, via `claude plugin install`), a symlink `~/.local/bin/aos-dash` (add that folder to your PATH if `aos-dash` is not found), a small notifier app under `~/.claude/plugins/data/`, and a monitor process on port 4318 (`make install PORT=4328` uses another port). `make uninstall` reverses it. `make stop` and `make uninstall` stop only the monitor on PORT (4318 unless you pass `PORT=`). `make doctor` shows "no hook log yet" until you start a Claude Code session; that is normal.
+`make install` changes only: the Claude Code plugin (user scope, via `claude plugin install`), a symlink `~/.local/bin/aos-dash` (on Windows, two launcher scripts there instead: `aos-dash` for Git Bash and `aos-dash.cmd` for cmd and PowerShell; add that folder to your PATH if `aos-dash` is not found), a small notifier app under `~/.claude/plugins/data/`, and a monitor process on port 4318 (`make install PORT=4328` uses another port). `make uninstall` reverses it. `make stop` and `make uninstall` stop only the monitor on PORT (4318 unless you pass `PORT=`). `make doctor` shows "no hook log yet" until you start a Claude Code session; that is normal.
 
 Then start a new Claude Code session and open http://127.0.0.1:4318 (the page is empty until a session sends events; `aos-dash` is the same view in the terminal). The graph's `Streams` button (or `Q`) cycles Full / Quiet / Lines; Lines draws no particles and stops per-frame redraws, for the lowest overhead ([measured](docs/overhead.md)). Local-only, read-only; hooks never log prompts, file contents or tool output, but do log event and tool names, working-folder and edited-file paths, transcript paths and a redacted short task description (full list: [plugin/README.md](plugin/README.md#privacy)). Status: personal project, macOS-first. [MIT License](LICENSE).
 
