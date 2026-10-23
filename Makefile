@@ -3,21 +3,28 @@
 
 SHELL      := /bin/bash
 # make from cmd or PowerShell (Windows outside Git Bash, where MSYSTEM is unset): /bin/bash does not exist there, so make
-# would fall back to cmd.exe and every recipe would fail ('PORT' is not recognized...). Locate Git for Windows through
-# `git` (on the PATH of any shell that can run it), run the recipes with its bash, put its usr/bin first so they find
-# tail, awk, uname and start (curl is Windows' own, in System32), and give make the HOME that bash and node agree on
-# (PowerShell does not export one). The exec path is <root>/<mingw64|mingw32|clangarm64>/libexec/git-core; any other
-# layout (not Git for Windows) leaves GIT_ROOT empty and stops with a message instead of running a SHELL that is not there.
+# would fall back to cmd.exe and every recipe would fail ('PORT' is not recognized...). (A make that has its own
+# /bin/bash, such as Cygwin's, is not this case and keeps SHELL as it is.) Locate Git for Windows through `git` (on the
+# PATH of any shell that can run it), run the recipes with its bash, put its usr/bin first so they find tail, awk,
+# uname and start (curl is Windows' own, in System32), and give make and bash the HOME that node and Claude Code use
+# (their home is USERPROFILE; an inherited HOME that differs would point DATA somewhere else). The exec path is
+# <root>/<mingw64|mingw32|clangarm64>/libexec/git-core; any other layout (not Git for Windows), or a git without a bash
+# that runs (MinGit, the git bundled with GitHub Desktop), stops with a message instead of a SHELL that is not there.
 ifeq ($(OS),Windows_NT)
-ifeq ($(MSYSTEM),)
+ifeq ($(MSYSTEM)$(wildcard /bin/bash /bin/bash.exe),)
 GIT_EXEC   := $(shell git --exec-path)
 GIT_ROOT   := $(strip $(foreach d,mingw64 mingw32 clangarm64,$(if $(findstring /$(d)/libexec/git-core,$(GIT_EXEC)),$(subst /$(d)/libexec/git-core,,$(GIT_EXEC)))))
 ifeq ($(GIT_ROOT),)
 $(error git not found on PATH, or not Git for Windows ($(or $(GIT_EXEC),no git)): make needs Git for Windows (its bash runs the recipes). Install it or run make from Git Bash)
 endif
-SHELL      := $(GIT_ROOT)/usr/bin/bash.exe
+GIT_BASH   := $(GIT_ROOT)/usr/bin/bash.exe
+GIT_BASH_OK := $(shell "$(GIT_BASH)" -c "echo ok")
+ifeq ($(GIT_BASH_OK),)
+$(error $(GIT_BASH) is missing or does not run: make needs the bash of a full Git for Windows (not MinGit). Install it or run make from Git Bash)
+endif
+SHELL      := $(GIT_BASH)
 export PATH := $(GIT_ROOT)/usr/bin;$(PATH)
-HOME       ?= $(USERPROFILE)
+HOME       := $(USERPROFILE)
 export HOME
 endif
 endif
@@ -57,13 +64,15 @@ install: check build validate ## Install everything: build, register + install t
 	@echo "  2. Open http://127.0.0.1:$(PORT)   (or run: aos-dash)"
 	@echo "  3. Optional status line:  make statusline"
 	@echo "  4. Check everything:      make doctor"
-	@echo "Troubleshooting: aos-dash not found -> add this to your shell profile: export PATH=\"\$$HOME/.local/bin:\$$PATH\"; empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
+	@echo "Troubleshooting: aos-dash not found -> put ~/.local/bin on your PATH (Git Bash, zsh, bash: add to your shell profile: export PATH=\"\$$HOME/.local/bin:\$$PATH\"; cmd and PowerShell: add %USERPROFILE%\\.local\\bin to your user PATH, make link prints how); empty dashboard -> normal until a Claude Code session has run (it fills from hook events)."
 	@echo "NOTE: if you previously added AOS hooks to ~/.claude/settings.json by hand, remove them (they would log every event twice)."
 
-# `stop` fails when it cannot identify the listener on PORT (right for `restart`); here that is only a warning, the uninstall goes on.
+# `stop` fails when it cannot identify the listener on PORT (right for `restart`) and `statusline-off` when settings.json cannot
+# be read; here each only prints its reason, and the uninstall goes on to remove the plugin.
 uninstall: ## Remove the plugin, marketplace entry, aos-dash link and status line (your data stays)
 	@PORT=$(PORT) $(AOS) stop || true
-	@$(MAKE) --no-print-directory unlink statusline-off
+	@$(MAKE) --no-print-directory unlink || true
+	@$(MAKE) --no-print-directory statusline-off || true
 	-@claude plugin uninstall $(PLUGIN) 2>&1 | tail -1
 	-@claude plugin marketplace remove $(MARKET) 2>&1 | tail -1
 	@echo "Removed. Activity history is kept in $(DATA) (delete it to erase)."
