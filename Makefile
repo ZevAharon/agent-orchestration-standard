@@ -51,12 +51,14 @@ help: ## Show this list
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  make %-16s %s\n", $$1, $$2}'
 	@echo; echo "First time:  make install   then start a NEW Claude Code session and open http://127.0.0.1:$(PORT)"
 
+# `link` fails when an aos-dash that is not ours is in the way. The plugin is installed by then, so the install goes on
+# to start the monitor instead of stopping halfway.
 install: check build validate ## Install everything: build, register + install the plugin, link `aos-dash`, build the notifier, start the monitor
 	@echo "==> registering the local marketplace"
 	@claude plugin marketplace add "$(REPO)" 2>&1 | tail -1 || true
 	@echo "==> installing $(PLUGIN)"
 	@claude plugin install $(PLUGIN) 2>&1 | tail -1 || true
-	@$(MAKE) --no-print-directory link
+	@$(MAKE) --no-print-directory link || echo "  ! aos-dash not linked (reason above); the install goes on, the web dashboard does not need it"
 	@$(MAKE) --no-print-directory notifier
 	@$(MAKE) --no-print-directory start
 	@echo; echo "Done. Next:"

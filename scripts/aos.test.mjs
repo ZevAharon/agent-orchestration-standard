@@ -30,12 +30,14 @@ assert.equal(alive(kids[1].pid), true, 'monitor on another port untouched');
 kids[1].kill();
 
 const WIN = process.platform === 'win32';
-if (WIN) {
-  // A failed PowerShell query is an error, never "nothing listens" (no powershell on PATH: Node looks it up there)
-  const noPs = spawnSync(process.execPath, [AOS, 'stop'], { env: { PATH: path.join(tmp, 'nowhere'), PORT: String(pa) }, encoding: 'utf8' });
-  assert.equal(noPs.status, 1, 'stop fails when the listeners cannot be listed');
-  assert.match(noPs.stdout, /could not list what listens/);
-}
+// Nothing on the port is "not running" (lsof exits 1 then), but a failed query (no powershell or lsof on PATH: Node
+// looks it up there) is an error, never "nothing listens"
+const idle = spawnSync(process.execPath, [AOS, 'stop'], { env: { ...process.env, PORT: String(pa) }, encoding: 'utf8' });
+assert.equal(idle.status, 0, `stop succeeds when nothing listens: ${idle.stdout}`);
+assert.match(idle.stdout, /was not running/);
+const noTool = spawnSync(process.execPath, [AOS, 'stop'], { env: { PATH: path.join(tmp, 'nowhere'), PORT: String(pa) }, encoding: 'utf8' });
+assert.equal(noTool.status, 1, 'stop fails when the listeners cannot be listed');
+assert.match(noTool.stdout, WIN ? /could not list what listens .*powershell/ : /could not list what listens .*lsof/);
 
 // doctor: foreign aos-dash on PATH and missing hook log
 // (Windows: no symlinks without admin, so the other install is another checkout's `link` output, made by a copy of
@@ -89,6 +91,12 @@ try {
     const older = path.join(tmp, 'older'); fs.mkdirSync(older);
     for (const n of ['aos-dash', 'aos-dash.cmd']) fs.writeFileSync(path.join(older, n), 'rem aos-dash shim (scripts/aos.mjs link)\r\n');
     assert.match(doctor(home, [older]).stdout, /launcher from an older make link/);
+    // a marker edited by hand, with a target that is not a path, is reported, not a crash
+    const edited = path.join(tmp, 'edited'); fs.mkdirSync(edited);
+    for (const n of ['aos-dash', 'aos-dash.cmd']) fs.writeFileSync(path.join(edited, n), 'rem aos-dash shim (scripts/aos.mjs link) {"target":5}\r\n');
+    const de = doctor(home, [edited]);
+    assert.doesNotMatch(de.stderr, /TypeError|Error:/, `doctor does not throw on a bad marker: ${de.stderr}`);
+    assert.match(de.stdout, /All essentials OK|essential problem/, 'doctor runs to the end');
   }
 } finally { fs.unlinkSync(alias); } // never leave a link into the live checkout behind in the temp folder
 
@@ -110,6 +118,20 @@ assert.equal(aos('link').status, 1, 'link refuses to replace a foreign aos-dash'
 aos('unlink');
 assert.equal(fs.readFileSync(path.join(bin, 'aos-dash'), 'utf8'), 'not ours\n', 'unlink leaves a foreign aos-dash alone');
 
+// link reports an own launcher it cannot remove instead of throwing (a read-only folder; skipped on Windows, where
+// Node deletes read-only files, and for root, who may write anywhere)
+if (!WIN && process.getuid() !== 0) {
+  const robin = path.join(tmp, 'robin'), raos = (c) => spawnSync(process.execPath, [AOS, c], { env: { ...process.env, BIN: robin }, encoding: 'utf8' });
+  assert.equal(raos('link').status, 0);
+  fs.chmodSync(robin, 0o555);
+  try {
+    const rl = raos('link');
+    assert.equal(rl.status, 1, 'link fails when its launcher cannot be removed');
+    assert.match(rl.stdout, /could not replace .*delete it by hand/);
+    assert.doesNotMatch(rl.stderr, /at .*aos\.mjs/, 'no stack trace');
+  } finally { fs.chmodSync(robin, 0o755); }
+}
+
 // A symlink is ours only when it points at a plugin/bin/aos-dash: one to another tool (dangling or not) is left alone
 // (skipped where the account may not create symlinks)
 const sbin = path.join(tmp, 'symbin'), sdst = path.join(sbin, 'aos-dash'), saos = (c) => spawnSync(process.execPath, [AOS, c], { env: { ...process.env, BIN: sbin }, encoding: 'utf8' });
@@ -120,6 +142,10 @@ if (symlinks) {
   saos('unlink');
   assert.ok(fs.lstatSync(sdst).isSymbolicLink(), 'unlink leaves a symlink to another tool alone');
   fs.unlinkSync(sdst); fs.symlinkSync(path.join(other, 'plugin', 'bin', 'aos-dash'), sdst);
+  // a symlink into another checkout is that install, not an older shim of this one
+  const ds = doctor(home, [sbin]).stdout;
+  assert.match(ds, /different install: .*other-install/, `doctor names the other checkout: ${ds}`);
+  assert.doesNotMatch(ds, /older make link/);
   assert.equal(saos('link').status, 0, 'link replaces a symlink to an aos-dash');
 }
 if (WIN) {

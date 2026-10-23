@@ -121,8 +121,17 @@ function build() {
 
 function validate() {
   const candidates = ['claude', path.join(os.homedir(), '.local', 'bin', 'claude')];
+  const opts = { cwd: REPO, encoding: 'utf8', timeout: 60000 };
+  const win = process.platform === 'win32';
+  // `claude` from npm is claude.cmd on Windows, which Node runs only through a shell. cmd exits 1 for a command it
+  // cannot find, the same as a failed validation, so look for it on PATH first. The arguments are fixed words, so
+  // they can be joined into the command line.
+  const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const onPath = (name) => (process.env.PATH || '').split(path.delimiter).filter(Boolean).some((d) => exts.some((e) => fs.existsSync(path.join(d, name + e))));
   for (const bin of candidates) {
-    const r = spawnSync(bin, ['plugin', 'validate', './plugin'], { cwd: REPO, encoding: 'utf8', timeout: 60000 });
+    const viaShell = win && bin === 'claude';
+    if (viaShell && !onPath(bin)) continue;
+    const r = viaShell ? spawnSync('claude plugin validate ./plugin', { ...opts, shell: true }) : spawnSync(bin, ['plugin', 'validate', './plugin'], opts);
     if (r.error && r.error.code === 'ENOENT') continue;
     const out = `${r.stdout || ''}${r.stderr || ''}`.trimEnd();
     console.log(`\n$ ${bin} plugin validate ./plugin  (exit ${r.status}${r.signal ? `, signal ${r.signal}` : ''})`);

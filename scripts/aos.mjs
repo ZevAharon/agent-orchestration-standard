@@ -38,11 +38,16 @@ const shimCmd = (src) => {
   const utf8 = ['setlocal', `for /f "tokens=*" %%a in ('chcp') do for %%b in (%%a) do set "cp=%%~nb"`, 'chcp 65001 >nul', `chcp %cp% >nul & ${run}`];
   return ['@echo off', `rem ${mark(src)}`, ...(/^[\x20-\x7e]*$/.test(src) ? [run] : utf8)].join('\r\n') + '\r\n';
 };
-// What a shim written by `link` launches; null for a foreign file, or a shim from before the marker carried the target.
+// What a shim written by `link` launches; null for a foreign or unreadable file, a shim from before the marker carried
+// the target, or a marker whose target is not a path (edited by hand).
 const shimTarget = (f) => {
-  const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).find((l) => l.includes(SHIM_MARK)) || '';
-  try { return JSON.parse(line.slice(line.indexOf(SHIM_MARK) + SHIM_MARK.length)).target || null; } catch { return null; }
+  try {
+    const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).find((l) => l.includes(SHIM_MARK)) || '';
+    const t = JSON.parse(line.slice(line.indexOf(SHIM_MARK) + SHIM_MARK.length)).target;
+    return typeof t === 'string' && t ? t : null;
+  } catch { return null; }
 };
+const isLink = (f) => { try { return fs.lstatSync(f).isSymbolicLink(); } catch { return false; } };
 const pathDirs = () => (process.env.PATH || '').split(path.delimiter).filter(Boolean);
 const norm = (p) => WIN ? path.resolve(p).toLowerCase() : p;
 
@@ -88,11 +93,12 @@ async function doctor() {
   else {
     // Resolve what each one launches (the symlink target, or the target recorded in a Windows shim) and the
     // checkout itself through realpath, so a symlinked / junctioned checkout still counts as this one.
-    const launched = (f) => { let t = f; if (WIN) { try { t = shimTarget(f) || f; } catch {} } try { return fs.realpathSync(t); } catch { return t; } };
+    const launched = (f) => { const t = (WIN && shimTarget(f)) || f; try { return fs.realpathSync(t); } catch { return t; } };
     let repoReal = REPO; try { repoReal = fs.realpathSync(REPO); } catch {}
     const mine = norm(path.join(repoReal, 'plugin', 'bin')) + path.sep;
     const other = onPath.map((f) => [f, launched(f)]).find(([, real]) => !norm(real).startsWith(mine));
-    const older = other && WIN && isOurs(other[0]) && !shimTarget(other[0]);
+    // An older shim is ours but carries no target; a symlink (to another checkout here) never carries one.
+    const older = other && WIN && !isLink(other[0]) && isOurs(other[0]) && !shimTarget(other[0]);
     if (older) warn(`aos-dash on PATH (${other[0]}) is a launcher from an older make link: run: make link to refresh it`);
     else if (other) warn(`aos-dash on PATH is a different install: ${other[0]}${other[1] === other[0] ? '' : ` -> ${other[1]}`} (not in this checkout ${REPO}; run: make link)`);
     else if (missing.length) warn(`aos-dash on PATH (${onPath.join(', ')}) but not for ${missing.join(' or ')} (run: make link, and put ${BIN} on your PATH)`);
@@ -108,20 +114,23 @@ async function doctor() {
 // (so "nothing listens" is never guessed from a failed query). Windows has no lsof/ps, so ask PowerShell: any error
 // (a missing cmdlet) ends in exit 2, except the "no such connection / process" ones that the two calls hide with
 // -ErrorAction SilentlyContinue; the final `exit 0` is for the success case, where PowerShell would otherwise exit 1
-// after a hidden non-fatal error even with the pid lines already printed.
+// after a hidden non-fatal error even with the pid lines already printed. lsof exits 1 both when nothing matches and
+// after a warning (an unreadable mount), so only a missing or killed lsof counts as "could not list".
 function listeners() {
   if (WIN) {
     const ps = `$ErrorActionPreference = 'Stop'; try { foreach ($id in @(Get-NetTCPConnection -State Listen -LocalPort ${PORT} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)) { "$id" + [char]9 + (Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue).CommandLine } } catch { exit 2 }; exit 0`;
     const out = run('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps]);
     return out === null ? null : out.split(/\r?\n/).filter(Boolean).map((l) => l.split('\t'));
   }
-  return (run('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN']) || '').split('\n').filter(Boolean).map((p) => [p, run('ps', ['-p', p, '-o', 'command=']) || '']);
+  let out;
+  try { out = execFileSync('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN'], EXEC); } catch (e) { if (e.status !== 1) return null; out = e.stdout || ''; }
+  return out.split('\n').filter(Boolean).map((p) => [p, run('ps', ['-p', p, '-o', 'command=']) || '']);
 }
 
 // Stop only the AOS monitor listening on PORT (never other monitors).
 async function stop() {
   const all = listeners();
-  if (!all) { bad(`could not list what listens on :${PORT} (is powershell available?): nothing was stopped`); process.exit(1); }
+  if (!all) { bad(`could not list what listens on :${PORT} (is ${WIN ? 'powershell available' : 'lsof installed'}?): nothing was stopped`); process.exit(1); }
   const alive = (p) => { try { process.kill(Number(p), 0); return true; } catch (e) { return e.code === 'EPERM'; } };
   const mine = all.filter(([, cmd]) => /monitor\.mjs/.test(cmd || '')).map(([p]) => p);
   // A live listener whose command line cannot be read (another user's or an elevated process) may well be the
@@ -144,7 +153,7 @@ function link() {
   const present = targets().filter(lexists);
   const foreign = present.find((dst) => !isOurs(dst));
   if (foreign) { bad(`${foreign} exists and is not ours: left alone (nothing changed)`); process.exit(1); }
-  for (const dst of present) fs.unlinkSync(dst);
+  for (const dst of present) { try { fs.unlinkSync(dst); } catch (e) { bad(`could not replace ${dst} (${e.code}): delete it by hand, then run: make link`); process.exit(1); } }
   if (WIN) {
     const [sh, cmd] = targets();
     fs.writeFileSync(sh, shimSh(src), { mode: 0o755 });
