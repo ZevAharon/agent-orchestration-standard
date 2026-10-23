@@ -35,6 +35,14 @@ PORT       ?= 4318
 DATA       := $(HOME)/.claude/plugins/data/aos-dashboard-aos-local
 AOS        := node scripts/aos.mjs
 ENSURE     := CLAUDE_PLUGIN_ROOT="$(REPO)/plugin" CLAUDE_PLUGIN_DATA="$(DATA)" AOS_PORT=$(PORT) node plugin/hooks/ensure-monitor.mjs
+# make for Windows hands the shell inheritable copies of its output handles, and they pass through bash and node to the
+# detached monitor, which then holds a pipe open (`make start | tail` would wait until the monitor stops). Node cannot
+# close a handle it has no fd for, so start ensure-monitor through Start-Process, whose child inherits no handles (only
+# the environment) and which returns at once, so `start` waits for the monitor itself. The path goes through the
+# environment, so PowerShell never parses it; [char]34 is a double quote.
+ifeq ($(OS),Windows_NT)
+ENSURE     := CLAUDE_PLUGIN_ROOT="$(REPO)/plugin" CLAUDE_PLUGIN_DATA="$(DATA)" AOS_PORT=$(PORT) AOS_ENSURE="$(REPO)/plugin/hooks/ensure-monitor.mjs" powershell -NoProfile -NonInteractive -Command 'Start-Process -WindowStyle Hidden -FilePath node -ArgumentList ([char]34 + $$env:AOS_ENSURE + [char]34)'
+endif
 # One browser opener per platform, so its own error shows if it fails. OS is Windows_NT in cmd, PowerShell and Git Bash
 # alike; elsewhere `open` is only right on macOS (on Debian/Ubuntu it is openvt). `=`, so uname runs only for `make open`.
 ifeq ($(OS),Windows_NT)
@@ -111,7 +119,7 @@ doctor: ## Check the whole setup and say what to fix
 	@$(AOS) doctor
 
 start: ## Start the live monitor (normally automatic when a session opens)
-	@$(ENSURE); sleep 1; curl -s -o /dev/null -m 2 -w "monitor on :$(PORT): HTTP %{http_code}\n" http://127.0.0.1:$(PORT)/api/state || echo "monitor did not start: see make doctor"
+	@$(ENSURE); for i in $$(seq 20); do curl -s -o /dev/null -m 1 http://127.0.0.1:$(PORT)/api/state && break; sleep 0.25; done; curl -s -o /dev/null -m 2 -w "monitor on :$(PORT): HTTP %{http_code}\n" http://127.0.0.1:$(PORT)/api/state || echo "monitor did not start: see make doctor"
 
 stop: ## Stop the live monitor on PORT (other AOS monitors are left alone)
 	@PORT=$(PORT) $(AOS) stop
