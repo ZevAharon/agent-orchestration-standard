@@ -12,7 +12,7 @@ const state = {
   events: Array.from({ length: 60 }, (_, i) => ({ i })), cost: { total_usd: 1.5 },
   collisions: [{ file: 'a.js', agents: ['a1', 'a2'] }], alerts: [{ severity: 'warn', message: 'stuck a2' }],
   agents: [
-    { id: 'a1', role: 'lead', status: 'running', model: 'x', model_label: 'Opus', usage: { input: 10, output: 5, cache_read: 1000, cache_write: 20, usd_est: 0.5 }, current_tool: { name: 'Edit', summary: 'a.js', ts: 1 }, recent_tools: [{ name: 'Read' }], files: ['a.js'], stuck: false, stuck_for_s: 0,
+    { id: 'a1', role: 'lead', status: 'running', model: 'x', model_label: 'Opus', effort: 'xhigh', usage: { input: 10, output: 5, cache_read: 1000, cache_write: 20, usd_est: 0.5 }, current_tool: { name: 'Edit', summary: 'a.js', ts: 1 }, recent_tools: [{ name: 'Read' }], files: ['a.js'], stuck: false, stuck_for_s: 0,
       started_at: '2026-01-01T00:00:00.000Z', ended_at: null, ran_s: 725, tok_per_min: 4100 },
     { id: 'a2', role: 'dev', status: 'stalled', model: 'y', model_label: 'Sonnet', usage: { input: 1, output: 1, cache_read: 5, cache_write: 0, usd_est: null }, current_tool: null, recent_tools: [], files: [], stuck: true, stuck_for_s: 99 },
   ],
@@ -73,6 +73,7 @@ ok(/new 37 .*vs cache_read 1,005/.test(txt(r)), 'status tokens: ' + txt(r));
 ok(/STUCK 99s/.test(txt(r)) && /conflicts: 1/.test(txt(r)) && /stuck a2/.test(txt(r)), 'status stuck/conflicts/alerts');
 ok(/a1 \| lead \| running \| .*\| new_tok 35 \| ran 12m \| 4\.1k tok\/min$/m.test(txt(r)), 'status run part: ' + txt(r));
 ok(/a2 \| dev \| stalled \| .*\| new_tok 2$/m.test(txt(r)), 'status: a2 line unchanged without run fields');
+ok(/a1 \| lead \| running \| Opus xhigh \| tool:/m.test(txt(r)) && /a2 \| dev \| stalled \| Sonnet \| tool:/m.test(txt(r)), 'status: effort beside the model when known: ' + txt(r));
 ok(!/events \(/.test(txt(r)), 'no events by default');
 r = await tool(c, 'aos_status', { include_events: 50 });
 ok(/events \(newest 50\)/.test(txt(r)), 'events 50');
@@ -94,7 +95,7 @@ r = await tool(c, 'aos_agent', {});
 ok(r.error?.code === -32602, 'agent missing id');
 r = await tool(c, 'aos_cost', {});
 ok(/new tokens: 37/.test(txt(r)) && /cache reads: 1,005/.test(txt(r)) && /\$0\.5/.test(txt(r)), 'cost');
-ok(/a1 Opus: 35 \| 1,000 \| \$0\.5 \| ran 12m \| 4\.1k tok\/min/.test(txt(r)), 'cost per-agent run part: ' + txt(r));
+ok(/a1 Opus xhigh: 35 \| 1,000 \| \$0\.5 \| ran 12m \| 4\.1k tok\/min/.test(txt(r)), 'cost per-agent run part: ' + txt(r));
 ok(/a2 Sonnet: 2 \| 5 \| n\/a$/m.test(txt(r)), 'cost: older monitor line unchanged');
 r = await tool(c, 'aos_conflicts', {});
 ok(/conflicts: 1/.test(txt(r)) && /a\.js/.test(txt(r)), 'conflicts');

@@ -54,6 +54,7 @@ export function machinesLine(state) {
   return 'machines: ' + ms.map((m) => m.ok ? `${m.name} ● ${(m.totals && m.totals.agents) || 0} agents ${fmtN(m.totals && m.totals.tokens)} tok` : `${m.name} ○ offline${m.error ? ' (' + m.error + ')' : ''}`).join(' · ');
 }
 const isMain = (a) => splitId(a.id).name === 'Claude Code';
+const modelTxt = (a) => (a.model_label ? String(a.model_label) + (a.effort ? ' ' + a.effort : '') : ''); // "Opus 5.5 xhigh"
 const fmtN = (n) => { n = Number(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); };
 const newTok = (u) => u ? (u.input || 0) + (u.output || 0) + (u.cache_write || 0) : 0;
 // wall-clock run time: 45s, 12m, 1h 05m; '-' when the monitor did not send ran_s (older monitor)
@@ -71,7 +72,7 @@ export function costTotals(state) {
   return { nw, cr };
 }
 export function snapshotJson(state) {
-  const agents = ((state && state.agents) || []).map((a) => ({ id: a.id, role: a.role, status: a.status, model_label: a.model_label }));
+  const agents = ((state && state.agents) || []).map((a) => ({ id: a.id, role: a.role, status: a.status, model_label: a.model_label, ...(a.effort ? { effort: a.effort } : {}) }));
   const out = { agents };
   if (state && Array.isArray(state.tasks) && state.tasks.length) out.tasks = state.tasks;
   out.totals = { agents: agents.length, tokens_total: costTotals(state).nw };
@@ -117,7 +118,7 @@ function labelSegs(a, level) {
   const stSeg = [...(sp.short ? [[sp.short + ' · ', 'muted']] : []), [st.toUpperCase(), STATUS_ROLE[st] || 'idle']];
   if (typeof a.ran_s === 'number' && segW(stSeg) + len(' · ran ' + fmtDur(a.ran_s)) <= 22) stSeg.push([' · ran ' + fmtDur(a.ran_s), 'muted']); // only when it fits the label width
   L.push(stSeg);
-  if (level < 2 && a.model_label) L.push([[clip((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + String(a.model_label), 22), a.model_mismatch ? 'stalled' : 'muted']]);
+  if (level < 2 && a.model_label) L.push([[clip((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + modelTxt(a), 22), a.model_mismatch ? 'stalled' : 'muted']]);
   return L;
 }
 const segW = (segs) => segs.reduce((n, s) => n + len(s[0]), 0);
@@ -130,7 +131,7 @@ function centreInfo(mains) {
   else if (n === 1) {
     const sp = splitId(mains[0].id);
     lines = [[['CLAUDE CODE', 'bone', true]], [[(sp.short ? sp.short + ' · ' : ''), 'muted'], [String(mains[0].status || 'idle').toUpperCase(), STATUS_ROLE[mains[0].status] || 'idle']]];
-    if (mains[0].model_label) lines.push([[clip(String(mains[0].model_label), 24), 'muted']]);
+    if (mains[0].model_label) lines.push([[clip(modelTxt(mains[0]), 24), 'muted']]);
   } else {
     lines = [[['CLAUDE CODE · ' + n + ' SESSIONS', 'bone', true]], [[running + ' running · ' + (n - running) + ' other', 'muted']]];
     const models = [...new Set(mains.map((a) => a.model_label).filter(Boolean))];
@@ -608,7 +609,7 @@ function drawGrid(state, cols, rows, opts) {
 function drawList(g, agents, cols, rows, groups = null) {
   const top = 2, avail = rows - 1 - top - 1; // minus column header, footer
   const showTool = cols >= 76, showModel = cols >= 56, showRan = cols >= 56, showTok = cols >= 40, showTpm = cols >= 120;
-  const wTok = showTok ? 8 : 0, wSt = 9, wMod = showModel ? 14 : 0, wTool = showTool ? 20 : 0, wRan = showRan ? 8 : 0, wTpm = showTpm ? 9 : 0;
+  const wTok = showTok ? 8 : 0, wSt = 9, wMod = showModel ? 18 : 0, wTool = showTool ? 20 : 0, wRan = showRan ? 8 : 0, wTpm = showTpm ? 9 : 0;
   const ind = groups ? 2 : 0;
   const wName = Math.max(8, cols - 3 - wSt - wMod - wTool - wRan - wTok - wTpm - 1);
   const cell = (s, w) => clip(s, w).padEnd(w);
@@ -634,7 +635,7 @@ function drawList(g, agents, cols, rows, groups = null) {
     let x = 3 + ind;
     g.put(x, y, cell(sp.name + (sp.short ? ' ' + sp.short : ''), wName - ind), 'bone'); x += wName - ind;
     g.put(x, y, cell(st.toUpperCase(), wSt), STATUS_ROLE[st] || 'idle'); x += wSt;
-    if (showModel) { g.put(x, y, cell((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + (a.model_label || ''), wMod), a.model_mismatch ? 'stalled' : 'muted'); x += wMod; }
+    if (showModel) { g.put(x, y, cell((a.model_mismatch ? '!' + a.requested_tier + ' ' : '') + modelTxt(a), wMod), a.model_mismatch ? 'stalled' : 'muted'); x += wMod; }
     if (showTool) { const t = a.current_tool; g.put(x, y, cell(t ? t.name + (t.summary ? ' ' + t.summary : '') : '', wTool), 'text2'); x += wTool; }
     if (showRan) { g.put(x, y, rj(fmtDur(a.ran_s), wRan), 'bone'); x += wRan; }
     if (showTok) { g.put(x, y, rj(fmtN(newTok(a.usage)), wTok), 'bone'); x += wTok; }
@@ -753,7 +754,7 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2); const o = parseArgs(argv);
-  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--json] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--json prints {agents:[{id,role,status,model_label}],tasks?,totals:{agents,tokens_total}} for all machines and exits; prints {"error":"monitor unreachable"} and exits 1 if the monitor is unreachable\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
+  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--json] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--json prints {agents:[{id,role,status,model_label,effort?}],tasks?,totals:{agents,tokens_total}} for all machines and exits; prints {"error":"monitor unreachable"} and exits 1 if the monitor is unreachable\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
   const out = process.stdout; const color = detectColor(process.env, out, argv);
   const target = `127.0.0.1:${o.port}`;
   if (o.json) {

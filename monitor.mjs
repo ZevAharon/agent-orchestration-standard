@@ -127,11 +127,12 @@ function ingest() {
   } catch {} finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
 }
 
-// ---------- transcript usage (counts + model only) ----------
+// ---------- transcript usage (counts, model and reasoning effort only) ----------
 const TR = new Map(), seenMsg = new Set();
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']); // effort is a fixed vocabulary; anything else is ignored
 function pump(p) {
   let t = TR.get(p);
-  if (!t) { t = { off: 0, carry: Buffer.alloc(0), tot: zero(), by: Object.create(null), model: null, last: 0 }; TR.set(p, t); if (TR.size > 500) TR.delete(TR.keys().next().value); }
+  if (!t) { t = { off: 0, carry: Buffer.alloc(0), tot: zero(), by: Object.create(null), model: null, effort: null, last: 0 }; TR.set(p, t); if (TR.size > 500) TR.delete(TR.keys().next().value); }
   const now = Date.now();
   if (now - t.last < 2000) return t;
   t.last = now;
@@ -152,8 +153,10 @@ function pump(p) {
       for (const l of data.subarray(0, idx).toString('utf8').split('\n')) {
         if (!l.includes('"usage"')) continue;
         try {
-          const m = JSON.parse(l).message;
+          const o = JSON.parse(l), m = o && o.message;
           if (!m || !m.usage || typeof m.usage !== 'object') continue;
+          const ef = typeof o.effort === 'string' ? o.effort : o.perTurnEffort; // the latest turn's effort is what the agent runs at now
+          if (EFFORTS.has(ef)) t.effort = ef;
           if (m.id) { if (seenMsg.has(m.id)) continue; seenMsg.add(m.id); if (seenMsg.size > 300000) seenMsg.clear(); }
           const u = m.usage, d = { input: +u.input_tokens || 0, output: +u.output_tokens || 0, cache_read: +u.cache_read_input_tokens || 0, cache_write: +u.cache_creation_input_tokens || 0 };
           const model = typeof m.model === 'string' && m.model !== '<synthetic>' ? m.model.slice(0, 80) : (t.model || 'unknown');
@@ -786,10 +789,10 @@ function fold(list, ref) {
   const usageOf = (sid, aid) => {
     const p = trPath(sid, aid), t = p ? pump(p) : null;
     if (p) used.add(p);
-    if (!t) return { model: null, have: false, usage: { ...zero(), usd_est: null } };
+    if (!t) return { model: null, effort: null, have: false, usage: { ...zero(), usd_est: null } };
     let est = 0, any = false;
     for (const [m, u] of Object.entries(t.by)) { const v = usd(u, m); if (v !== null) { est += v; any = true; } }
-    return { model: t.model, have: true, usage: { ...t.tot, usd_est: any ? Math.round(est * 1e6) / 1e6 : null } };
+    return { model: t.model, effort: t.effort, have: true, usage: { ...t.tot, usd_est: any ? Math.round(est * 1e6) / 1e6 : null } };
   };
   const stuckOf = (a, label, running, blocked) => {
     if (!running || a.wait || blocked) return null;
@@ -831,7 +834,7 @@ function fold(list, ref) {
     const ranMs = s.closed + (s.seg !== null ? Math.max(0, (running ? ref : s.last) - s.seg) : 0), ran = runS(ranMs);
     agents.push({ id: s.id, role: `orchestrator: Claude Code session${s.cwd ? ' in ' + s.cwd : ''}`, capabilities: ['claude-code'], can_delegate: true,
       status: ek ? 'errored' : running ? 'running' : 'idle', error_kind: ek, recent_failures: recentF(s, ref), current_task: null, last_event_at: iso(s.last),
-      current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(s.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(s.id),
+      current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(s.mdl) || modelLabel(u.model), ...(u.effort ? { effort: u.effort } : {}), usage: u.usage, files: filesOf(s.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
       started_at: iso(s.first), ended_at: running ? null : iso(s.last), ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...tierCheck(s.gid, s.tid, u.model || s.mdl), ...scopeCheck(s.gid, s.tid), ...(s.gid ? { goal_id: s.gid, ...(s.tid ? { task_id: s.tid } : {}), ...(goalTitle(s.gid) ? { goal_title: goalTitle(s.gid) } : {}) } : {}), });
   }
@@ -844,7 +847,7 @@ function fold(list, ref) {
     const ranMs = sub.ranMs + (sub.segOpen !== null ? Math.max(0, (silent ? sub.last : ref) - sub.segOpen) : 0), ran = runS(ranMs);
     agents.push({ id: sub.id, role: sub.role, capabilities: [], can_delegate: false, status: ek ? 'errored' : running ? 'running' : silent ? 'stalled' : 'idle', error_kind: ek, recent_failures: recentF(sub, ref),
       current_task: open ? 't-' + sub.id : null, last_event_at: iso(sub.last),
-      current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(sub.mdl) || modelLabel(u.model), usage: u.usage, files: filesOf(sub.id),
+      current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(sub.mdl) || modelLabel(u.model), ...(u.effort ? { effort: u.effort } : {}), usage: u.usage, files: filesOf(sub.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
       started_at: iso(sub.start), ended_at: sub.done ? iso(sub.endMs) : silent ? iso(sub.last) : null, ran_s: ran, tok_per_min: tokPerMin(ran, u.usage, u.have), ...(ps.gid ? { goal_id: ps.gid, ...(ps.tid ? { task_id: ps.tid } : {}), ...scopeCheck(ps.gid, ps.tid), ...(goalTitle(ps.gid) ? { goal_title: goalTitle(ps.gid) } : {}) } : {}), });
     tasks.push({ id: 't-' + sub.id, goal_id: GOAL_ID, title: sub.title, assignee: sub.id, status: sub.done && sub.failed ? 'failed' : running ? 'running' : silent ? 'stalled' : 'done',
