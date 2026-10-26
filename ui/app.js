@@ -1632,6 +1632,7 @@
   var liveState = null, override = null, subs = [];
   function applyState(s, fromPoll) {
     if (window.AosMachines) { try { AosMachines.render(s); s = AosMachines.filter(s); } catch (e0) { if (window.console) console.error(e0); } }
+    if (window.AosDone) { try { s = AosDone.filter(s); } catch (e1) { if (window.console) console.error(e1); } }
     prev = fromPoll ? state : null; state = s;
       try { render(); diff(); if (fromPoll && window.AosFx) AosFx.onState(state, prev); }
       catch (err) {

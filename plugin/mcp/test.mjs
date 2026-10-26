@@ -68,7 +68,7 @@ ok(names.join() === 'aos_agent,aos_alerts,aos_conflicts,aos_cost,aos_goals,aos_h
 ok(r.result.tools.every((t) => t.annotations.readOnlyHint === true && t.inputSchema.type === 'object'), 'annotations/schema');
 
 r = await tool(c, 'aos_status', {});
-ok(!r.result.isError && /agents: 2 \(running 1, idle 0, stalled 1\)/.test(txt(r)), 'status counts');
+ok(!r.result.isError && /agents: 2 \(running 1, idle 0, done 0, stalled 1\)/.test(txt(r)), 'status counts');
 ok(/new 37 .*vs cache_read 1,005/.test(txt(r)), 'status tokens: ' + txt(r));
 ok(/STUCK 99s/.test(txt(r)) && /conflicts: 1/.test(txt(r)) && /stuck a2/.test(txt(r)), 'status stuck/conflicts/alerts');
 ok(/a1 \| lead \| running \| .*\| new_tok 35 \| ran 12m \| 4\.1k tok\/min$/m.test(txt(r)), 'status run part: ' + txt(r));
@@ -115,7 +115,7 @@ state.agents[0].project = 'Alpha App'; state.agents[0].project_id = 'proj-a'; st
 r = await tool(c, 'aos_status', {});
 ok(/^projects: 2 \| Alpha App \(1 agent, 1 running, ran 16h 00m\); beta \(1 agent, 0 running, ran 1m\)$/m.test(txt(r)), 'projects line: ' + txt(r));
 ok(/^project Alpha App: 1 agent\n  a1 \| lead/m.test(txt(r)) && /^project beta: 1 agent\n  a2 \| dev/m.test(txt(r)), 'agents grouped under project headings');
-ok(/agents: 2 \(running 1, idle 0, stalled 1\)/.test(txt(r)), 'counts unchanged with projects');
+ok(/agents: 2 \(running 1, idle 0, done 0, stalled 1\)/.test(txt(r)), 'counts unchanged with projects');
 r = await tool(c, 'aos_status', { project: 'beta' });
 ok(!r.result.isError && /agents: 1 \(running 0/.test(txt(r)) && /a2 \| dev/.test(txt(r)) && !/a1 \| lead/.test(txt(r)) && /projects: 1 \| beta/.test(txt(r)), 'project filter by name: ' + txt(r));
 r = await tool(c, 'aos_status', { project: 'PROJ-A' });

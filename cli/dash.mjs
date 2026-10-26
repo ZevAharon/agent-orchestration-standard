@@ -11,8 +11,8 @@ const PAL = {
   idle: [138, 148, 170], stalled: [217, 142, 58], errored: [208, 104, 92],
 };
 const SGR16 = { bone: '37', text2: '37', muted: '37', dim: '90', brass: '33', brasshi: '93', brassdim: '33', idle: '36', stalled: '95', errored: '31' };
-const STATUS_ROLE = { running: 'brass', idle: 'idle', stalled: 'stalled', errored: 'errored' };
-const STATUS_GLYPH = { running: '●', idle: '○', stalled: '◆', errored: '■' };
+const STATUS_ROLE = { running: 'brass', idle: 'idle', done: 'dim', stalled: 'stalled', errored: 'errored' };
+const STATUS_GLYPH = { running: '●', idle: '○', done: '✓', stalled: '◆', errored: '■' };
 const PARTICLES = ['·', '∙', '•', '⋅'];
 
 export function detectColor(env = process.env, stream = process.stdout, argv = []) {
@@ -47,6 +47,21 @@ export function filterMachine(state, name) {
   if (!state || !name || !Array.isArray(state.agents)) return state;
   const keep = (l) => (Array.isArray(l) ? l.filter((x) => (x.machine || 'local') === name) : l);
   return { ...state, agents: keep(state.agents), tasks: keep(state.tasks), projects: keep(state.projects), alerts: keep(state.alerts), collisions: keep(state.collisions), events: keep(state.events), goals: keep(state.goals), cost: { by_model: {} } };
+}
+// done subagents: hidden unless shown (d); shown, only those that ended within DONE_GRACE_MS of server_time. Same rule as ui/done.js.
+export const DONE_GRACE_MS = 10 * 60 * 1000;
+export function filterDone(state, show) {
+  if (!state || !Array.isArray(state.agents)) return state;
+  const t = Date.parse(state.server_time); const ref = Number.isFinite(t) ? t : Date.now();
+  const hide = (a) => a && a.status === 'done' && (!show || ref - Date.parse(a.ended_at) > DONE_GRACE_MS);
+  const gone = new Set(state.agents.filter(hide).map((a) => a.id));
+  if (!gone.size) return { ...state, done_hidden: 0 };
+  const projects = Array.isArray(state.projects) ? state.projects.map((p) => {
+    if (!p || !Array.isArray(p.agents)) return p;
+    const agents = p.agents.filter((id) => !gone.has(id));
+    return { ...p, agents, ...(typeof p.total === 'number' ? { total: Math.max(0, p.total - (p.agents.length - agents.length)) } : {}) };
+  }) : state.projects;
+  return { ...state, agents: state.agents.filter((a) => !gone.has(a.id)), projects, done_hidden: gone.size };
 }
 export function machinesLine(state) {
   const ms = state && Array.isArray(state.machines) ? state.machines : [];
@@ -499,6 +514,7 @@ function headerLines(state, cols, opts) {
     [agents.length + ' agents · ' + running + ' running', 'bone'], ['   ', null],
     ['new tokens ', 'muted'], [fmtN(nw), 'bone'], ...(cols >= 100 ? [['  cache reads ', 'dim'], [fmtN(cr), 'dim']] : []), ['   ', null],
     ['conflicts ', 'muted'], [String(coll), coll ? 'brasshi' : 'bone'], ['  alerts ', 'muted'], [String(al), al ? 'brasshi' : 'bone']];
+  if (opts.showDone) segs.push(['   done shown', 'muted']); else if (state.done_hidden) segs.push(['   ' + state.done_hidden + ' done hidden', 'dim']);
   if (opts.paused) segs.push(['   PAUSED', 'brasshi', true]);
   const g = (state.goal && state.goal.title) || '';
   const last = al ? (state.alerts[al - 1].text || state.alerts[al - 1].kind || '') : '';
@@ -510,7 +526,7 @@ function headerLines(state, cols, opts) {
 }
 // view: 'auto' | 'list' (forced) | 'ring' (forced). Ring is forced only by the user, never by agent count.
 function footer(g, cols, rows, opts, tag) {
-  const full = ' q quit · space pause · l view · ? help', short = ' q quit · l view · ? help';
+  const full = ' q quit · space pause · l view · d done · ? help', short = ' q quit · l view · ? help';
   const keys = len(full) + 5 + len(tag) <= cols ? full : short;
   g.put(0, rows - 1, clip(keys, cols), 'dim');
   const tx = len(keys) + 5;
@@ -645,8 +661,8 @@ function drawList(g, agents, cols, rows, groups = null) {
 }
 
 function drawHelp(g, cols, rows) {
-  const t = ['AOS terminal dashboard', '', 'q / ctrl-c  quit', 'space       pause / resume', 'l           view: auto -> list -> ring -> auto', '?           close this help', '',
-    'ring: heart = all sessions, project hubs, agents on arcs', 'view auto = ring when all labels fit, else list', 'running = brass, idle = slate, stalled = ochre, errored = brick', 'new tokens = input + output + cache write'];
+  const t = ['AOS terminal dashboard', '', 'q / ctrl-c  quit', 'space       pause / resume', 'l           view: auto -> list -> ring -> auto', 'd           done subagents: hidden / shown for 10 min', '?           close this help', '',
+    'ring: heart = all sessions, project hubs, agents on arcs', 'view auto = ring when all labels fit, else list', 'running = brass, idle = slate, done = dim, stalled = ochre, errored = brick', 'new tokens = input + output + cache write'];
   const w = Math.min(cols - 2, Math.max(...t.map(len)) + 4), h = t.length + 2;
   if (w < 20 || h > rows) return;
   const x0 = Math.floor((cols - w) / 2), y0 = Math.floor((rows - h) / 2);
@@ -698,6 +714,7 @@ export function renderModel(state, cols, rows, opts = {}) {
   const view = opts.view || (opts.list ? 'list' : 'auto');
   if (state && Array.isArray(state.machines)) remoteNames = state.machines.map((m) => m.name).filter((n) => n !== 'local');
   if (state && opts.machine) state = filterMachine(state, opts.machine);
+  if (state) state = filterDone(state, !!opts.showDone);
   if (!state || !Array.isArray(state.agents)) return drawDown(cols, rows, opts);
   if (!state.agents.length) return drawWaiting(cols, rows, opts);
   return drawGrid(state, cols, rows, { ...opts, view });
@@ -705,12 +722,13 @@ export function renderModel(state, cols, rows, opts = {}) {
 
 // Pure key handler. The view cycles auto -> list (forced) -> ring (forced) -> auto.
 export const VIEWS = ['auto', 'list', 'ring'];
-export function initialUi(o = {}) { return { view: o.list ? 'list' : 'auto', paused: false, help: false }; }
+export function initialUi(o = {}) { return { view: o.list ? 'list' : 'auto', paused: false, help: false, showDone: !!o.done }; }
 export function handleKey(ui, key) {
   const k = String(key);
   if (k === 'q' || k === 'Q' || k === '\x03') return { ui, quit: true, handled: true };
   if (k === ' ') return { ui: { ...ui, paused: !ui.paused }, quit: false, handled: true };
   if (k === 'l' || k === 'L') return { ui: { ...ui, view: VIEWS[(VIEWS.indexOf(ui.view) + 1) % VIEWS.length] }, quit: false, handled: true };
+  if (k === 'd' || k === 'D') return { ui: { ...ui, showDone: !ui.showDone }, quit: false, handled: true };
   if (k === '?') return { ui: { ...ui, help: !ui.help }, quit: false, handled: true };
   if (k === '\x1b' && ui.help) return { ui: { ...ui, help: false }, quit: false, handled: true };
   return { ui, quit: false, handled: false };
@@ -739,10 +757,10 @@ async function fetchState(port) {
 }
 
 function parseArgs(argv) {
-  const o = { once: false, list: false, port: Number(process.env.AOS_PORT) || 4318, size: null, help: false, json: false };
+  const o = { once: false, list: false, done: false, port: Number(process.env.AOS_PORT) || 4318, size: null, help: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--once') o.once = true; else if (a === '--list') o.list = true; else if (a === '--json') o.json = true;
+    if (a === '--once') o.once = true; else if (a === '--list') o.list = true; else if (a === '--done') o.done = true; else if (a === '--json') o.json = true;
     else if (a === '--port') o.port = Number(argv[++i]); else if (a.startsWith('--port=')) o.port = Number(a.slice(7));
     else if (a === '--machine') o.machine = argv[++i]; else if (a.startsWith('--machine=')) o.machine = a.slice(10);
     else if (a === '--size') o.size = argv[++i]; else if (a === '--help' || a === '-h') o.help = true;
@@ -754,7 +772,7 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2); const o = parseArgs(argv);
-  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--json] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--json prints {agents:[{id,role,status,model_label,effort?}],tasks?,totals:{agents,tokens_total}} for all machines and exits; prints {"error":"monitor unreachable"} and exits 1 if the monitor is unreachable\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
+  if (o.help) { console.log('usage: aos-dash [--once] [--list] [--done] [--json] [--port N] [--machine NAME] [--no-color] [--size WxH]\n--json prints {agents:[{id,role,status,model_label,effort?}],tasks?,totals:{agents,tokens_total}} for all machines and exits; prints {"error":"monitor unreachable"} and exits 1 if the monitor is unreachable\n--machine NAME shows one machine of a cross-machine setup (see docs/cross-machine.md)\n--done shows subagents that finished in the last 10 minutes (hidden by default; d toggles)\nreads the monitor at 127.0.0.1:4318 (change with --port N or AOS_PORT); shows "Waiting for your first Claude Code session" until one has run\nkeys: q quit, space pause, l view (auto -> list -> ring), d done subagents, ? help' + (pathHint() ? '\n\n' + pathHint() : '')); return; }
   const out = process.stdout; const color = detectColor(process.env, out, argv);
   const target = `127.0.0.1:${o.port}`;
   if (o.json) {
@@ -767,7 +785,7 @@ async function main() {
     let cols = out.columns || Number(process.env.COLUMNS) || 140, rows = out.rows || Number(process.env.LINES) || 40;
     const m = o.size && /^(\d+)x(\d+)$/.exec(o.size); if (m) { cols = +m[1]; rows = +m[2]; }
     let st = null; try { st = await fetchState(o.port); } catch {}
-    process.stdout.write(renderModel(st, cols, rows, { color, list: o.list, target, machine: o.machine }).text + '\n');
+    process.stdout.write(renderModel(st, cols, rows, { color, list: o.list, showDone: o.done, target, machine: o.machine }).text + '\n');
     return;
   }
   let state = null, ui = initialUi(o), frame = 0, last = '', lastOk = 0;
@@ -775,7 +793,7 @@ async function main() {
   const draw = (force) => {
     const cols = out.columns || 80, rows = out.rows || 24;
     const age = lastOk ? Math.round((Date.now() - lastOk) / 1000) : 0;
-    const m = renderModel(state, cols, rows, { color, machine: o.machine, cache, view: ui.view, help: ui.help, paused: ui.paused, frame, target, footerRight: state ? target + (age > 2 ? ` · ${age}s old` : '') : '' });
+    const m = renderModel(state, cols, rows, { color, machine: o.machine, cache, view: ui.view, help: ui.help, paused: ui.paused, showDone: ui.showDone, frame, target, footerRight: state ? target + (age > 2 ? ` · ${age}s old` : '') : '' });
     if (!force && m.text === last) return; last = m.text;
     out.write('\x1b[H' + m.lines.map((l) => l + '\x1b[K').join('\r\n'));
   };

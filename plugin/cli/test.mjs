@@ -416,5 +416,33 @@ assert.equal(cleanup({ write: (s) => w.push(s) }, fakeStdin), false, 'idempotent
   assertNoTextOverlap(ring, 'ring with effort');
   assert.equal(snapshotJson(f).agents[0].effort, 'xhigh'); assert.equal('effort' in snapshotJson(f).agents[3], false, '--json carries effort only when known');
 }
+// ---- done subagents: hidden by default; d / --done shows those that ended in the last 10 minutes
+{
+  const { filterDone } = await import('./dash.mjs');
+  const now = Date.parse('2026-10-26T16:30:00Z'), ago = (m) => new Date(now - m * 60e3).toISOString();
+  const f = fixture(3); f.server_time = new Date(now).toISOString();
+  f.agents.push({ id: 'Recent·d001', status: 'done', ended_at: ago(3), usage: {} }, { id: 'Old·d002', status: 'done', ended_at: ago(25), usage: {} }, { id: 'NoEnd·d003', status: 'done', usage: {} });
+  f.projects = [{ id: 'p', name: 'p', agents: f.agents.map((a) => a.id), total: f.agents.length }];
+  const ids = (s) => s.agents.map((a) => a.id);
+  const off = filterDone(f, false), on = filterDone(f, true);
+  assert.ok(!ids(off).some((i) => /·d00/.test(i)) && off.done_hidden === 3, 'off: every done subagent hidden');
+  assert.equal(ids(off).length, 4, 'off: sessions and running/idle/stalled/errored kept');
+  assert.deepEqual(off.projects[0].agents, ids(off)); assert.equal(off.projects[0].total, 4, 'project list and total pruned');
+  assert.ok(ids(on).includes('Recent·d001') && ids(on).includes('NoEnd·d003') && !ids(on).includes('Old·d002') && on.done_hidden === 1, 'on: only the last 10 minutes, no end time kept');
+  assert.equal(f.agents.length, 7, 'input not mutated');
+  let ui = initialUi({}); assert.equal(ui.showDone, false, 'hidden by default');
+  const hidden = renderModel(f, 140, 30, { list: true, showDone: ui.showDone }).plain.join('\n');
+  assert.ok(!hidden.includes('Recent') && hidden.includes('3 done hidden'), 'list hides them and says how many');
+  assert.ok(hidden.includes('d done'), 'footer lists the d key');
+  ui = handleKey(ui, 'd').ui; assert.equal(ui.showDone, true, 'd shows');
+  const shown = renderModel(f, 140, 30, { list: true, showDone: ui.showDone }).plain.join('\n');
+  assert.ok(shown.includes('Recent') && shown.includes('DONE') && !shown.includes('Old ') && shown.includes('done shown'), 'shown: recent done row with its status');
+  const ringOn = renderModel(f, 140, 40, { view: 'ring', showDone: true }), ringOff = renderModel(f, 140, 40, { view: 'ring' });
+  assert.equal(ringOn.orbs.length - ringOff.orbs.length, 2, 'ring draws the two shown done subagents, and leaves them out when hidden');
+  assert.ok(ringOn.orbs.filter((o) => o.status === 'done').length === 2 && !ringOff.orbs.some((o) => o.status === 'done'), 'done orbs');
+  assertNoTextOverlap(ringOn, 'ring with done shown');
+  assert.equal(handleKey(ui, 'D').ui.showDone, false, 'D toggles back');
+  assert.equal(initialUi({ done: true }).showDone, true, '--done starts shown');
+}
 function isMainViaRender(f) { return !renderModel(f, 140, 30, { list: true }).plain.join('\n').includes('laptop2:'); }
 console.log(`ok (${ringCases} ring cases, ${listCases} list fallbacks)`);

@@ -25,7 +25,7 @@ If you previously added AOS hooks to `~/.claude/settings.json` by hand, remove t
 ## Use
 
 - **Web:** http://127.0.0.1:4318 (`make open`). The monitor starts automatically at session start.
-- **Terminal:** `aos-dash` (live full-screen; `q` quit, space pause, `l` cycles auto/list/ring). `aos-dash --once` prints one frame.
+- **Terminal:** `aos-dash` (live full-screen; `q` quit, space pause, `l` cycles auto/list/ring, `d` shows done subagents from the last 10 minutes). `aos-dash --once` prints one frame.
 - **In a session:** `/aos-dashboard:dash` shows a snapshot; the `aos_*` MCP tools let Claude query the monitor (`aos_status` first).
 - **Status line (optional):** `make statusline` (edits `~/.claude/settings.json` with a backup; `make statusline-off` removes it).
 - **Notifications:** alerts for "needs your input" and "stuck" use a small branded notifier app on macOS (`make notifier`).

@@ -815,7 +815,8 @@ function fold(list, ref) {
     return p;
   };
   const sessLive = (s) => !(s.ended || ref - s.last > SESSION_TTL_S * 1000);
-  const subLive = (sub) => sub.done || !(ref - sub.last > STALE_SUB_S * 1000 || (sessions.get(sub.sid) || {}).ended); // an orphaned run is dropped rather than claimed running
+  // a done subagent stays in view only while its session does (the UI also hides one finished longer than its grace); an orphaned run is dropped rather than claimed running
+  const subLive = (sub) => (sub.done ? sessLive(sessions.get(sub.sid) || { ended: true, last: 0 }) : !(ref - sub.last > STALE_SUB_S * 1000 || (sessions.get(sub.sid) || {}).ended));
   // state.projects order: first appearance of each project's sessions
   const rank = new Map();
   for (const s of sessions.values()) { const k = pOf(s.sid).key; if (!rank.has(k)) rank.set(k, rank.size); }
@@ -845,7 +846,8 @@ function fold(list, ref) {
     const silent = open && sf !== null, running = open && !silent, ek = errOf(sub, ref, sub.id);
     // a killed subagent never stops: its open run segment ends at its last event; ran_s sums every run segment
     const ranMs = sub.ranMs + (sub.segOpen !== null ? Math.max(0, (silent ? sub.last : ref) - sub.segOpen) : 0), ran = runS(ranMs);
-    agents.push({ id: sub.id, role: sub.role, capabilities: [], can_delegate: false, status: ek ? 'errored' : running ? 'running' : silent ? 'stalled' : 'idle', error_kind: ek, recent_failures: recentF(sub, ref),
+    // a subagent that sent SubagentStop is finished and listens for nothing, so it is `done`; `idle` stays the session's word (it waits for input)
+    agents.push({ id: sub.id, role: sub.role, capabilities: [], can_delegate: false, status: ek ? 'errored' : running ? 'running' : silent ? 'stalled' : 'done', error_kind: ek, recent_failures: recentF(sub, ref),
       current_task: open ? 't-' + sub.id : null, last_event_at: iso(sub.last),
       current_tool: tv.current_tool, recent_tools: tv.recent_tools, model: u.model, model_label: modelLabel(sub.mdl) || modelLabel(u.model), ...(u.effort ? { effort: u.effort } : {}), usage: u.usage, files: filesOf(sub.id),
       stuck: sf !== null, ...(sf !== null ? { stuck_for_s: sf } : {}), project: PF(p).name, project_id: PF(p).id,
