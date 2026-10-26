@@ -405,5 +405,16 @@ assert.equal(cleanup({ write: (s) => w.push(s) }, fakeStdin), false, 'idempotent
   assert.ok(one.includes('1 agents'), 'filtered to one agent: ' + one.split('\n')[0]);
   assert.ok(isMainViaRender(f), 'namespaced remote Claude Code session still recognised as a main session');
 }
+// ---- reasoning effort beside the model, when the monitor knows it
+{
+  const f = fixture(3, 1, true); f.agents[0].effort = 'xhigh'; f.agents[1].effort = 'medium';
+  const pl = renderModel(f, 140, 30, { list: true }).plain.join('\n');
+  assert.ok(pl.includes('Sonnet 5.5 xhigh') && pl.includes('Sonnet 5.5 medium'), 'list shows model + effort');
+  assert.ok(/Haiku 5\.5\s/.test(pl) && !pl.includes('Haiku 5.5 x'), 'no effort, no suffix');
+  const ring = renderModel(f, 140, 40, { view: 'ring' });
+  assert.ok(ring.plain.join('\n').includes('Sonnet 5.5 medium'), 'ring label shows model + effort');
+  assertNoTextOverlap(ring, 'ring with effort');
+  assert.equal(snapshotJson(f).agents[0].effort, 'xhigh'); assert.equal('effort' in snapshotJson(f).agents[3], false, '--json carries effort only when known');
+}
 function isMainViaRender(f) { return !renderModel(f, 140, 30, { list: true }).plain.join('\n').includes('laptop2:'); }
 console.log(`ok (${ringCases} ring cases, ${listCases} list fallbacks)`);

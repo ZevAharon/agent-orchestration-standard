@@ -295,6 +295,9 @@
     return parts.join('|');
   }
 
+  /* model with its reasoning effort when the transcript recorded one: "Opus 5.5 · xhigh" */
+  function modelTxt(a) { var ml = a && a.model_label ? String(a.model_label) : ''; return ml && a.effort ? ml + ' · ' + a.effort : ml; }
+
   /* ---- node metrics (world units == css px at scale 1) ---- */
   function agentLab(a, lvl) {
     var V = LVS[lvl], sp = splitId(a.id), fs = nameFs(lvl), nmax = V.nmax || L.nameMax, w = 0;
@@ -302,7 +305,7 @@
     lines.forEach(function (t) { w = Math.max(w, sansW(t, fs, true)); });
     var hasM = !!V.model, hasT = !!V.task && !!sticky[a.id];
     if (V.sub) w = Math.max(w, monoW((sp.short ? sp.short + ' · ' : '') + 'XXXXXXXX' + (hasM ? '' : 'XXXXXXXX'), subFs(lvl), 0.72));
-    if (hasM) w = Math.max(w, monoW('● NO SIGNAL 23H59M', 11, 1.1));
+    if (hasM) w = Math.max(w, monoW('● NO SIGNAL 23H59M', 11, 1.1), monoW('● ' + modelTxt(a), 11, 1.1));
     if (hasT) w = Math.max(w, L.chipW);
     var h = lines.length * LH.n * V.fs + (V.sub ? LH.s : 0) + (hasM ? LH.m : 0) + (hasT ? LH.c + 4 : 4);
     return { lines: lines, w: Math.ceil(w) + 6, h: Math.ceil(h) + 2, V: V, hasM: hasM, hasT: hasT };
@@ -935,8 +938,8 @@
     setT(g.querySelector('tspan.sid'), sp.short ? sp.short + ' · ' : '');
     setT(g.querySelector('tspan.st'), nsT && !m.hasM ? nsT : trunc(human(a.status), 8));
     if (nsT && m.hasM) { clsSet(mt, 'model nosig fam-' + fam); setT(mt.querySelector('tspan.dot'), ''); setT(mt.querySelector('tspan.mt'), nsT); setT(nsEl, ''); }
-    else { clsSet(mt, 'model fam-' + fam); setT(mt.querySelector('tspan.dot'), ml ? '● ' : ''); setT(mt.querySelector('tspan.mt'), trunc(ml.toUpperCase(), 16)); setT(nsEl, ''); }
-    var al = 'Agent ' + a.id + ', ' + a.status + (a.stuck ? ', no signal for ' + fmtCompact(a.stuck_for_s) : '') + (cl.length ? ', file conflict ' + cl[0].name : '') + (a.guard ? ', guard ' + guardTxt(a) : '') + (toolName(a) ? ', using ' + toolName(a) : '') + (ml ? ', model ' + ml : '') + (a.current_task ? ', working on ' + a.current_task : '') + '. Open details.';
+    else { clsSet(mt, 'model fam-' + fam); setT(mt.querySelector('tspan.dot'), ml ? '● ' : ''); setT(mt.querySelector('tspan.mt'), trunc(modelTxt(a).toUpperCase(), 24)); setT(nsEl, ''); }
+    var al = 'Agent ' + a.id + ', ' + a.status + (a.stuck ? ', no signal for ' + fmtCompact(a.stuck_for_s) : '') + (cl.length ? ', file conflict ' + cl[0].name : '') + (a.guard ? ', guard ' + guardTxt(a) : '') + (toolName(a) ? ', using ' + toolName(a) : '') + (ml ? ', model ' + ml : '') + (a.effort ? ', effort ' + a.effort : '') + (a.current_task ? ', working on ' + a.current_task : '') + '. Open details.';
     if (g.getAttribute('aria-label') !== al) g.setAttribute('aria-label', al);
     /* task chip */
     var ct = m.hasT ? taskLineFor(a) : null, c = chips[a.id];
@@ -1228,7 +1231,7 @@
       var p = n.p, hs = hubStatus(p.agents), rt = projRan(p);
       return [p.name, cnt(p.agents.length, 'agent', 'agents') + ' · ' + hs.running + ' running' + (hs.stalled ? ' · ' + hs.stalled + ' stalled' : '') + (hs.errored ? ' · ' + hs.errored + ' errored' : '') + (rt != null ? ' · ran ' + fmtRan(rt) : '')];
     }
-    var a = agentById(id), ml = a && a.model_label ? String(a.model_label) : '', tn = toolName(a), t = a && a.current_tool, rn = a ? ranTxt(a) : '';
+    var a = agentById(id), ml = a ? modelTxt(a) : '', tn = toolName(a), t = a && a.current_tool, rn = a ? ranTxt(a) : '';
     if (!a || (!tn && !ml && !rn && !a.guard)) return null;
     if (a.model_mismatch) ml = (ml || 'model') + ' (asked ' + a.requested_tier + ')';
     if (a.out_of_scope) ml = (ml ? ml + ' · ' : '') + 'OUT OF SCOPE';
@@ -1502,7 +1505,7 @@
       pj.agents.forEach(function (x) {
         var li = el('li'), b = el('button', 'linkbtn pa-row'); b.type = 'button';
         b.appendChild(pill(x.status)); b.appendChild(el('b', null, splitId(x.id).name));
-        b.appendChild(el('small', null, [splitId(x.id).short, x.model_label, toolName(x) ? 'using ' + toolName(x) : '', hasRan(x) ? 'ran ' + fmtRan(x.ran_s) : ''].filter(Boolean).join(' · ')));
+        b.appendChild(el('small', null, [splitId(x.id).short, modelTxt(x), toolName(x) ? 'using ' + toolName(x) : '', hasRan(x) ? 'ran ' + fmtRan(x.ran_s) : ''].filter(Boolean).join(' · ')));
         b.addEventListener('click', function () { window.AosApp.selectAgent(x.id); });
         li.appendChild(b); ulp.appendChild(li);
       });
@@ -1517,7 +1520,7 @@
         r.appendChild(pill(mm ? sessionDisp(mm, lv) : dispLive(lv.l))); if (!live || hb.status !== 'running') r.appendChild(pill(hb.status)); body.appendChild(r);
         if (mm) {
           if (mm.role) { var rp0 = el('p', null, mm.role); rp0.style.overflowWrap = 'anywhere'; body.appendChild(rp0); }
-          kv(body, [['Session', mm.id], ['Status', mm.status]].concat(mm.model_label ? [['Model', mm.model_label + (mm.model && mm.model !== mm.model_label ? ' (' + mm.model + ')' : '')]] : [],
+          kv(body, [['Session', mm.id], ['Status', mm.status]].concat(mm.model_label ? [['Model', mm.model_label + (mm.model && mm.model !== mm.model_label ? ' (' + mm.model + ')' : '')]] : [], mm.effort ? [['Effort', mm.effort]] : [],
             [['Current task', mm.current_task || 'none'], ['Last event', fmtTs(mm.last_event_at) || 'n/a']]));
         }
         kv(body, [['Seq', hb.seq], [live ? 'Last activity' : 'Age', live ? (lv.age < 2 ? 'just now' : fmtAge(lv.age) + ' ago') : fmtAge(lv.age)], ['Interval', hb.interval_s + 's'],
@@ -1545,7 +1548,7 @@
       if (window.AOSGuard && AOSGuard.badgeEl) { var gb = AOSGuard.badgeEl(a, state); if (gb) p.appendChild(gb); }
       body.appendChild(p);
       if (a.role) { var rp = el('p', null, a.role); rp.style.overflowWrap = 'anywhere'; body.appendChild(rp); }
-      kv(body, [['Full id', a.id]].concat(a.machine ? [['Machine', a.machine]] : []).concat(a.model_label ? [['Model', a.model_label + (a.model && a.model !== a.model_label ? ' (' + a.model + ')' : '')]] : [], [['Current task', a.current_task || 'none'], ['Can delegate', a.can_delegate ? 'yes' : 'no'], ['Last event', fmtTs(a.last_event_at) || 'n/a']]));
+      kv(body, [['Full id', a.id]].concat(a.machine ? [['Machine', a.machine]] : []).concat(a.model_label ? [['Model', a.model_label + (a.model && a.model !== a.model_label ? ' (' + a.model + ')' : '')]] : [], a.effort ? [['Effort', a.effort]] : [], [['Current task', a.current_task || 'none'], ['Can delegate', a.can_delegate ? 'yes' : 'no'], ['Last event', fmtTs(a.last_event_at) || 'n/a']]));
       toolFeed(body, a);
       if ((a.capabilities || []).length) { section(body, 'Capabilities'); var c = el('div'); a.capabilities.forEach(function (x) { c.appendChild(el('span', 'tag', x)); }); body.appendChild(c); }
       section(body, 'Tasks');

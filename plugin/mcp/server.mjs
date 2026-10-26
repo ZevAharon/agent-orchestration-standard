@@ -68,7 +68,7 @@ function toolStr(t) {
 }
 function agentLine(a) {
   const u = a.usage || {};
-  return `${a.id} | ${a.role ?? '?'} | ${a.status ?? '?'} | ${a.model_label ?? a.model ?? '?'} | tool: ${toolStr(a.current_tool)}` +
+  return `${a.id} | ${a.role ?? '?'} | ${a.status ?? '?'} | ${a.model_label ?? a.model ?? '?'}${a.effort ? ' ' + a.effort : ''} | tool: ${toolStr(a.current_tool)}` +
     (a.stuck ? ` | STUCK ${num(a.stuck_for_s)}s` : '') + ` | new_tok ${fmt(newTokens(u))}` + runPart(a);
 }
 // projects (newer monitors): state.projects = [{id,name,agents:[ids],running,ran_s_total}]; absent on older monitors
@@ -208,7 +208,7 @@ const TOOLS = [
         `cache reads: ${fmt(t.cache_read)}`,
         `usd_est: ${t.usdKnown ? '$' + t.usd.toFixed(4) : 'n/a'}`,
         'per agent (new tokens | cache_read | usd_est | ran | tok/min):',
-        ...agents.map((a) => `  ${a.id} ${a.model_label ?? ''}: ${fmt(newTokens(a.usage))} | ${fmt(num(a.usage?.cache_read))} | ${a.usage?.usd_est == null ? 'n/a' : '$' + a.usage.usd_est}` + runPart(a)),
+        ...agents.map((a) => `  ${a.id} ${a.model_label ?? ''}${a.effort ? ' ' + a.effort : ''}: ${fmt(newTokens(a.usage))} | ${fmt(num(a.usage?.cache_read))} | ${a.usage?.usd_est == null ? 'n/a' : '$' + a.usage.usd_est}` + runPart(a)),
       ];
       if (s.cost !== undefined) L.push('monitor cost: ' + trunc(JSON.stringify(s.cost), 1500));
       return L.join('\n');
