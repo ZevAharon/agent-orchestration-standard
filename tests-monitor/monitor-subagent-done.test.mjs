@@ -15,6 +15,11 @@ before(async () => {
   L.push(hookEv({ ts: at(-18), ev: 'SubagentStop', sid: 'sdn1aaaa', agent_id: 'fin1', ...w }));
   L.push(hookEv({ ts: at(-0.05), ev: 'SubagentStart', sid: 'sdn1aaaa', agent_id: 'run1', agent_type: 'workflow-subagent', ...w }));
   L.push(hookEv({ ts: at(-0.02), ev: 'PreToolUse', sid: 'sdn1aaaa', agent_id: 'run1', tool: 'Grep', ...w }));
+  // a second session that has ended: its finished subagent must not float on with no live parent
+  L.push(hookEv({ ts: at(-25), ev: 'SessionStart', sid: 'sdn2bbbb', ...w }));
+  L.push(hookEv({ ts: at(-24), ev: 'SubagentStart', sid: 'sdn2bbbb', agent_id: 'orf1', agent_type: 'workflow-subagent', ...w }));
+  L.push(hookEv({ ts: at(-23), ev: 'SubagentStop', sid: 'sdn2bbbb', agent_id: 'orf1', ...w }));
+  L.push(hookEv({ ts: at(-22), ev: 'SessionEnd', sid: 'sdn2bbbb', ...w }));
   fs.writeFileSync(path.join(live, 'hook-events.ndjson'), L.join(''));
   M = await startMonitor({ orch, live }); await sleep(300);
 });
@@ -43,6 +48,13 @@ test('no subagent is ever reported idle; idle is a session state', async () => {
   const session = s.agents.find((a) => String(a.id).startsWith('Claude Code·'));
   const subs = s.agents.filter((a) => a !== session);
   assert.equal(session.status, 'idle');
-  assert.equal(subs.length, 2);
+  assert.equal(subs.length, 2, JSON.stringify(subs.map((a) => a.id)));
   assert.ok(subs.every((a) => a.status !== 'idle'), JSON.stringify(subs.map((a) => [a.id, a.status])));
+});
+
+test('a done subagent leaves with its session; one of a live session stays', async () => {
+  const s = (await M.get('/api/state')).json;
+  assert.equal(byAgent(s.agents, 'orf1'), undefined, 'the ended session\'s finished subagent is gone');
+  assert.ok(!s.agents.some((a) => String(a.id).includes('sdn2')), 'and so is the ended session');
+  assert.equal(byAgent(s.agents, 'fin1').status, 'done', 'the live session\'s finished subagent stays');
 });

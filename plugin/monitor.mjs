@@ -812,7 +812,8 @@ function fold(list, ref) {
     return p;
   };
   const sessLive = (s) => !(s.ended || ref - s.last > SESSION_TTL_S * 1000);
-  const subLive = (sub) => sub.done || !(ref - sub.last > STALE_SUB_S * 1000 || (sessions.get(sub.sid) || {}).ended); // an orphaned run is dropped rather than claimed running
+  // a done subagent stays in view only while its session does (the UI also hides one finished longer than its grace); an orphaned run is dropped rather than claimed running
+  const subLive = (sub) => (sub.done ? sessLive(sessions.get(sub.sid) || { ended: true, last: 0 }) : !(ref - sub.last > STALE_SUB_S * 1000 || (sessions.get(sub.sid) || {}).ended));
   // state.projects order: first appearance of each project's sessions
   const rank = new Map();
   for (const s of sessions.values()) { const k = pOf(s.sid).key; if (!rank.has(k)) rank.set(k, rank.size); }
