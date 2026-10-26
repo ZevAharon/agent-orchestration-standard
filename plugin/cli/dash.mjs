@@ -11,8 +11,8 @@ const PAL = {
   idle: [138, 148, 170], stalled: [217, 142, 58], errored: [208, 104, 92],
 };
 const SGR16 = { bone: '37', text2: '37', muted: '37', dim: '90', brass: '33', brasshi: '93', brassdim: '33', idle: '36', stalled: '95', errored: '31' };
-const STATUS_ROLE = { running: 'brass', idle: 'idle', stalled: 'stalled', errored: 'errored' };
-const STATUS_GLYPH = { running: '●', idle: '○', stalled: '◆', errored: '■' };
+const STATUS_ROLE = { running: 'brass', idle: 'idle', done: 'dim', stalled: 'stalled', errored: 'errored' };
+const STATUS_GLYPH = { running: '●', idle: '○', done: '✓', stalled: '◆', errored: '■' };
 const PARTICLES = ['·', '∙', '•', '⋅'];
 
 export function detectColor(env = process.env, stream = process.stdout, argv = []) {

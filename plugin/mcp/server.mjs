@@ -128,12 +128,12 @@ function summarize(s, includeEvents = 0, project = null, machine = null) {
     const ids = new Set(hit.flatMap((p) => tools_(p.agents)));
     agents = agents.filter((a) => ids.has(a.id) || hit.some((p) => p.id === a.project_id));
   }
-  const counts = { running: 0, idle: 0, stalled: 0 };
+  const counts = { running: 0, idle: 0, done: 0, stalled: 0 };
   for (const a of agents) if (a.status in counts) counts[a.status]++;
   const t = totals(agents);
   const L = [];
   L.push(`mode: ${s.mode ?? '?'} | server_time: ${s.server_time ?? '?'}` + (s.goal ? ` | goal: ${trunc(typeof s.goal === 'string' ? s.goal : JSON.stringify(s.goal), 200)}` : ''));
-  L.push(`agents: ${agents.length} (running ${counts.running}, idle ${counts.idle}, stalled ${counts.stalled}) | stuck: ${agents.filter((a) => a.stuck).length} | tasks: ${tasks.length}`);
+  L.push(`agents: ${agents.length} (running ${counts.running}, idle ${counts.idle}, done ${counts.done}, stalled ${counts.stalled}) | stuck: ${agents.filter((a) => a.stuck).length} | tasks: ${tasks.length}`);
   L.push(`tokens: new ${fmt(t.new)} (in ${fmt(t.input)}, out ${fmt(t.output)}, cache_write ${fmt(t.cache_write)}) vs cache_read ${fmt(t.cache_read)}` + (t.usdKnown ? ` | usd_est ~$${t.usd.toFixed(4)}` : ''));
   if (machs.length > 1) L.push(`machines: ${machs.length} | ${machs.map(machLine).join('; ')}`);
   const conf = conflictsOf(s);
